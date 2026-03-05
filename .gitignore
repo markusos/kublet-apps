@@ -1,6 +1,14 @@
-krates/*/.pio
-krates/*/.vscode
-krates/*/.vs
-krates/*/.gitignore
+apps/*/.pio
+apps/*/.vscode
+apps/*/.vs
+apps/*/.gitignore
 
 .DS_Store
+.venv/
+
+# Tools
+__pycache__/
+tools/.env
+tools/.kublet
+tools/nvs_wifi.bin
+tools/nvs_wifi.csv

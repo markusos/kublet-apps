@@ -2,9 +2,16 @@
 
 This folder contains a backup of the firmware binaries previously shared in the kublet discord channel. No guarantees that these will work, this is just to document previously shared communication before the project went dark. This may be usefull to recover in case the Kublet gets bricked.
 
-Download esptool with pip
+Download esptool with pip or use the uv project files in this directory:
+
 ```
 pip install esptool
+```
+
+or 
+
+```
+uv sync
 ```
 
 Flash Firmware:

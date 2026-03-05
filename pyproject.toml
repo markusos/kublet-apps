@@ -1,0 +1,10 @@
+[project]
+name = "kublet-apps"
+version = "0.1.0"
+description = "Tools and apps for the Kublet ESP32 display"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "esptool>=4.8.1",
+    "esp-idf-nvs-partition-gen>=0.2.0",
+]
