@@ -7,19 +7,18 @@
 
 #include "globals.h"
 
-#define DISPLAY_WIDTH tft.width()
-#define DISPLAY_HEIGHT tft.height()
-#define BUFFER_SIZE 240 // Buffer one line of pixels at a time
+#define DISPLAY_WIDTH 240
+#define DISPLAY_HEIGHT 240
+#define BUFFER_SIZE 240
 
-uint16_t usTemp[1][BUFFER_SIZE];
-bool dmaBuf = 0;
+uint16_t usTemp[BUFFER_SIZE];
 
 // Draw a line of image directly on the LCD
 void GIFDraw(GIFDRAW *pDraw)
 {
   uint8_t *s;
   uint16_t *d, *usPalette;
-  int x, y, iWidth, iCount;
+  int x, y, iWidth;
 
   // Display bounds check and cropping
   iWidth = pDraw->iWidth;
@@ -42,33 +41,12 @@ void GIFDraw(GIFDRAW *pDraw)
     pDraw->ucHasTransparency = 0;
   }
 
+  // Translate 8-bit pixels through the RGB565 palette
   s = pDraw->pPixels;
-
-  // Unroll the first pass to boost DMA performance
-  // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-  if (iWidth <= BUFFER_SIZE)
-    for (iCount = 0; iCount < iWidth; iCount++)
-      usTemp[dmaBuf][iCount] = usPalette[*s++];
-  else
-    for (iCount = 0; iCount < BUFFER_SIZE; iCount++)
-      usTemp[dmaBuf][iCount] = usPalette[*s++];
+  d = usTemp;
+  for (x = 0; x < iWidth; x++)
+    *d++ = usPalette[*s++];
 
   tft.setAddrWindow(pDraw->iX, y, iWidth, 1);
-  tft.pushPixels(&usTemp[0][0], iCount);
-
-  iWidth -= iCount;
-  // Loop if pixel buffer smaller than width
-  while (iWidth > 0)
-  {
-    // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-    if (iWidth <= BUFFER_SIZE)
-      for (iCount = 0; iCount < iWidth; iCount++)
-        usTemp[dmaBuf][iCount] = usPalette[*s++];
-    else
-      for (iCount = 0; iCount < BUFFER_SIZE; iCount++)
-        usTemp[dmaBuf][iCount] = usPalette[*s++];
-
-    tft.pushPixels(&usTemp[0][0], iCount);
-    iWidth -= iCount;
-  }
+  tft.pushPixels(usTemp, iWidth);
 }

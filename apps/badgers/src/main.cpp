@@ -27,8 +27,8 @@ void setup()
   otaserver.run();         // DO NOT EDIT
 
   tft.begin();
-  tft.setRotation(0);        // Set the screen rotation
-  tft.fillScreen(TFT_BLACK); // Clear the screen with black color
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
 
   gif.begin(BIG_ENDIAN_PIXELS);
 }
@@ -42,11 +42,10 @@ void loop()
     if (gif.open((uint8_t *)GIF_IMAGE, sizeof(GIF_IMAGE), GIFDraw))
     {
       tft.startWrite();
-      while (gif.playFrame(true, NULL))
+      while (gif.playFrame(false, NULL))
       {
         yield();
       }
-      Serial.println("Badger Badger Badger...");
       gif.close();
       tft.endWrite();
     }
