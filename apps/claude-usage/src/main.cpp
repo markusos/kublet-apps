@@ -18,21 +18,22 @@ int weeklyPercent = 0;
 int refreshTimeInSeconds = 300;
 unsigned long lastTime = 0;
 
-#define DARK_GRAY 0x2104
-#define ORANGE 0xFD20
+#define MATRIX_TRACK  0x0200  // Dark green track background
+#define MATRIX_BRIGHT 0x07E0  // Bright green (session)
+#define MATRIX_GREEN  0x05E0  // Medium green (weekly)
 #define CENTER_X 120
 #define CENTER_Y 112
 #define OUTER_R 105
 #define OUTER_IR 85
 #define INNER_R 70
 #define INNER_IR 50
-#define ARC_START 225
-#define ARC_END 135
+#define ARC_START 45
+#define ARC_END 315
 #define ARC_SPAN 270
 
 void drawRing(int cx, int cy, int outerR, int innerR, int percent, uint16_t color) {
   // Background track (full 270 degrees)
-  ui.tft.drawSmoothArc(cx, cy, outerR, innerR, ARC_START, ARC_END, DARK_GRAY, TFT_BLACK, false);
+  ui.tft.drawSmoothArc(cx, cy, outerR, innerR, ARC_START, ARC_END, MATRIX_TRACK, TFT_BLACK, false);
 
   // Foreground arc proportional to percent
   if (percent > 0) {
@@ -62,8 +63,8 @@ void drawUI() {
   ui.tft.fillScreen(TFT_BLACK);
 
   // Draw concentric rings
-  drawRing(CENTER_X, CENTER_Y, OUTER_R, OUTER_IR, sessionPercent, TFT_CYAN);
-  drawRing(CENTER_X, CENTER_Y, INNER_R, INNER_IR, weeklyPercent, ORANGE);
+  drawRing(CENTER_X, CENTER_Y, OUTER_R, OUTER_IR, sessionPercent, MATRIX_BRIGHT);
+  drawRing(CENTER_X, CENTER_Y, INNER_R, INNER_IR, weeklyPercent, MATRIX_GREEN);
 
   // Percentage text inside inner ring
   char sessionStr[8];
@@ -73,27 +74,27 @@ void drawUI() {
 
   // Session percentage (upper half of inner ring)
   ui.tft.setTTFFont(Arial_24_Bold);
-  ui.tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  ui.tft.setTextColor(MATRIX_BRIGHT, TFT_BLACK);
   int sw = ui.tft.TTFtextWidth(sessionStr);
   ui.tft.setCursor((240 - sw) / 2, 90);
   ui.tft.print(sessionStr);
 
   // Weekly percentage (lower half of inner ring)
   ui.tft.setTTFFont(Arial_20_Bold);
-  ui.tft.setTextColor(ORANGE, TFT_BLACK);
+  ui.tft.setTextColor(MATRIX_GREEN, TFT_BLACK);
   int ww = ui.tft.TTFtextWidth(weeklyStr);
   ui.tft.setCursor((240 - ww) / 2, 118);
   ui.tft.print(weeklyStr);
 
   // Bottom labels with icons
-  drawBoltIcon(40, 224, TFT_CYAN);
+  drawBoltIcon(40, 224, MATRIX_BRIGHT);
   ui.tft.setTTFFont(Arial_12);
-  ui.tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  ui.tft.setTextColor(MATRIX_BRIGHT, TFT_BLACK);
   ui.tft.setCursor(52, 226);
   ui.tft.print("Session");
 
-  drawCalendarIcon(148, 224, ORANGE);
-  ui.tft.setTextColor(ORANGE, TFT_BLACK);
+  drawCalendarIcon(148, 224, MATRIX_GREEN);
+  ui.tft.setTextColor(MATRIX_GREEN, TFT_BLACK);
   ui.tft.setCursor(162, 226);
   ui.tft.print("Weekly");
 }
