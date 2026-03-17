@@ -160,8 +160,23 @@ def find_nvs_gen() -> str:
     sys.exit(1)
 
 
-def generate_nvs(ssid: str, pw: str) -> Path:
-    """Generate NVS partition binary with WiFi credentials."""
+def get_local_ip() -> str | None:
+    """Get this computer's local IP address."""
+    try:
+        result = subprocess.run(
+            ["ipconfig", "getifaddr", "en0"],
+            capture_output=True, text=True, timeout=5,
+        )
+        ip = result.stdout.strip()
+        if ip:
+            return ip
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def generate_nvs(ssid: str, pw: str, app_config: dict[str, str] | None = None) -> Path:
+    """Generate NVS partition binary with WiFi credentials and optional app config."""
     print("\n🔧 Generating NVS partition...")
 
     buf = io.StringIO()
@@ -170,6 +185,12 @@ def generate_nvs(ssid: str, pw: str) -> Path:
     writer.writerow(["core", "namespace", "", ""])
     writer.writerow(["ssid", "data", "string", ssid])
     writer.writerow(["pw", "data", "string", pw])
+
+    if app_config:
+        writer.writerow(["app", "namespace", "", ""])
+        for key, value in app_config.items():
+            writer.writerow([key, "data", "string", value])
+
     NVS_CSV.write_text(buf.getvalue())
     print(f"  ✓ Wrote {NVS_CSV.relative_to(REPO_ROOT)}")
 
@@ -368,8 +389,18 @@ def cmd_init(args: argparse.Namespace) -> None:
     env = load_env()
     ssid, pw = get_wifi_credentials(env)
 
-    # 2. Generate NVS
-    generate_nvs(ssid, pw)
+    # 2. Detect local IP for app server URL
+    app_config = {}
+    local_ip = get_local_ip()
+    if local_ip:
+        server_url = f"http://{local_ip}:8198"
+        print(f"\n🖥  Server URL: {server_url}")
+        app_config["server_url"] = server_url
+    else:
+        print("\n  ⚠ Could not detect local IP — server_url not set in NVS")
+
+    # 3. Generate NVS
+    generate_nvs(ssid, pw, app_config=app_config if app_config else None)
 
     try:
         # 3. Detect serial port
