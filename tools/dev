@@ -13,6 +13,7 @@ import csv
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -438,6 +439,59 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 # ===========================================================================
+# Subcommand: logs
+# ===========================================================================
+
+def find_pio() -> str:
+    """Locate the PlatformIO CLI binary."""
+    # Check PATH first
+    pio = shutil.which("pio")
+    if pio:
+        return pio
+    # Fall back to PlatformIO's own venv
+    pio_venv = Path.home() / ".platformio" / "penv" / "bin" / "pio"
+    if pio_venv.exists():
+        return str(pio_venv)
+    print("Error: PlatformIO CLI (pio) not found.")
+    print("  Install it via: https://docs.platformio.org/en/latest/core/installation.html")
+    sys.exit(1)
+
+
+def cmd_logs(args: argparse.Namespace) -> None:
+    """Stream serial logs from the Kublet via USB."""
+    port = args.port or detect_serial_port()
+    pio = find_pio()
+
+    # If an app is specified, run from its directory so PlatformIO picks up
+    # the app's platformio.ini (and its monitor_speed, filters, etc.).
+    cwd = None
+    if args.app:
+        app_dir = APPS_DIR / args.app
+        if not app_dir.is_dir() or not (app_dir / "platformio.ini").exists():
+            print(f"Error: App '{args.app}' not found at {app_dir.relative_to(REPO_ROOT)}/")
+            available = sorted(
+                p.name for p in APPS_DIR.iterdir()
+                if p.is_dir() and (p / "platformio.ini").exists()
+            )
+            if available:
+                print(f"  Available apps: {', '.join(available)}")
+            sys.exit(1)
+        cwd = app_dir
+
+    baud = "460800"
+    label = f" (app: {args.app})" if args.app else ""
+    print(f"📡 Streaming logs from {port}{label}  — press Ctrl+C to stop\n")
+
+    try:
+        subprocess.run(
+            [pio, "device", "monitor", "--port", port, "--baud", baud],
+            cwd=cwd,
+        )
+    except KeyboardInterrupt:
+        print("\n\n🛑 Log stream stopped.")
+
+
+# ===========================================================================
 # Subcommand: deploy
 # ===========================================================================
 
@@ -495,12 +549,15 @@ def main():
         epilog="""
 commands:
   init     Flash dev firmware + WiFi credentials via USB
+  logs     Stream serial logs from the Kublet via USB
   deploy   Build and send an app to the Kublet over WiFi
 
 examples:
   ./tools/dev init                            # auto-detect port, use .env creds
   ./tools/dev init -p /dev/cu.usbserial-0001  # explicit serial port
   ./tools/dev init --factory                  # restore factory firmware
+  ./tools/dev logs                            # stream logs (auto-detect port)
+  ./tools/dev logs hello                      # stream logs using hello app config
   ./tools/dev deploy badgers                  # build & send the badgers app
   ./tools/dev deploy hello --ip 192.168.1.50  # override IP address
   ./tools/dev deploy hello --skip-build       # send without rebuilding
@@ -526,6 +583,21 @@ examples:
         "--no-wait",
         action="store_true",
         help="Skip post-flash connectivity checks",
+    )
+
+    # -- logs --
+    p_logs = subparsers.add_parser(
+        "logs",
+        help="Stream serial logs from the Kublet via USB",
+    )
+    p_logs.add_argument(
+        "app",
+        nargs="?",
+        help="App directory name (uses its platformio.ini settings)",
+    )
+    p_logs.add_argument(
+        "-p", "--port",
+        help="USB serial port (auto-detected if omitted)",
     )
 
     # -- deploy --
@@ -555,6 +627,8 @@ examples:
 
     if args.command == "init":
         cmd_init(args)
+    elif args.command == "logs":
+        cmd_logs(args)
     elif args.command == "deploy":
         cmd_deploy(args)
 
