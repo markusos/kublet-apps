@@ -9,6 +9,6 @@ apps/*/.gitignore
 # Tools
 __pycache__/
 tools/.env
-tools/.kublet
+tools/.devices.yml
 tools/nvs_wifi.bin
 tools/nvs_wifi.csv

@@ -7,5 +7,23 @@ requires-python = ">=3.13"
 dependencies = [
     "esptool>=4.8.1",
     "esp-idf-nvs-partition-gen>=0.2.0",
+    "pyserial",
     "yfinance>=0.2.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tools/src/kublet_dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tools/tests"]
+pythonpath = ["tools/src"]
+
+[tool.ruff]
+target-version = "py313"

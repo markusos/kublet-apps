@@ -72,7 +72,9 @@ def get_usage_data(**_kwargs) -> dict:
                 env={**os.environ, "CLAUDECODE": ""},
             )
             data = json.loads(result.stdout.strip())
-            log(f"usage: session={data['session']['percent']}% weekly={data['weekly']['percent']}%")
+            log(
+                f"usage: session={data['session']['percent']}% weekly={data['weekly']['percent']}%"
+            )
             return data
         except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError) as e:
             log(f"usage fetch error: {e}")
@@ -145,7 +147,9 @@ def _fetch_chart(ticker: str) -> dict:
     in_hours = 9 * 60 + 30 <= now_et.hour * 60 + now_et.minute <= 16 * 60
     market_open = is_today and weekday and in_hours
 
-    log(f"chart: {ticker} open={open_price} last={last_price} pct={pct}% pts={len(points)} market={'open' if market_open else 'closed'}")
+    log(
+        f"chart: {ticker} open={open_price} last={last_price} pct={pct}% pts={len(points)} market={'open' if market_open else 'closed'}"
+    )
 
     return {
         "ticker": ticker,
