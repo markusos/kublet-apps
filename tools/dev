@@ -1,11 +1,19 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["pyserial", "esptool>=4.8.1", "esp-idf-nvs-partition-gen>=0.2.0"]
+# ///
+
 """
-Kublet Dev Tool — manage your Kublet device from the command line.
+Kublet Dev Tool — build, deploy, and manage your Kublet device.
 
 Usage:
+    ./tools/dev build [app-name]             # compile firmware
+    ./tools/dev deploy <app-name>            # build and send over WiFi OTA
+    ./tools/dev deploy <app> --skip-build    # send without rebuilding
+    ./tools/dev logs [app-name]              # stream serial logs
     ./tools/dev init                         # flash dev firmware + WiFi creds
     ./tools/dev init --factory               # restore factory firmware
-    ./tools/dev init -p /dev/cu.usbserial-0001
 """
 
 import argparse
@@ -13,6 +21,7 @@ import csv
 import io
 import os
 import re
+import serial
 import shutil
 import subprocess
 import sys
@@ -21,16 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Ensure we're running inside the project venv (pyserial, esptool, etc.)
-# If invoked directly (./tools/dev), re-exec through `uv run`.
-# ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-if not os.environ.get("VIRTUAL_ENV"):
-    os.execvp("uv", ["uv", "run", "--project", str(REPO_ROOT), "python", __file__] + sys.argv[1:])
-
-import serial  # noqa: E402  (available after venv check above)
 
 # ---------------------------------------------------------------------------
 # Paths (relative to repo root)
@@ -55,6 +55,37 @@ NVS_PARTITION_SIZE = "0x5000"  # 20 KB, must match partition table
 BAUD = "460800"
 FLASH_MODE = "dio"
 FLASH_FREQ = "40m"
+
+
+# ---------------------------------------------------------------------------
+# TFT_eSPI display config (ST7789, Kublet pin mapping, 40 MHz SPI)
+# ---------------------------------------------------------------------------
+
+USER_SETUP_H = """\
+#define USER_SETUP_INFO "User_Setup"
+#define ST7789_DRIVER
+#define TFT_RGB_ORDER TFT_BGR
+#define TFT_WIDTH  240
+#define TFT_HEIGHT 240
+#define TFT_MISO -1
+#define TFT_MOSI 23
+#define TFT_SCLK 18
+#define TFT_CS 5
+#define TFT_DC 2
+#define TFT_RST 4
+#define TFT_BL 15
+#define LOAD_GLCD
+#define LOAD_FONT2
+#define LOAD_FONT4
+#define LOAD_FONT6
+#define LOAD_FONT7
+#define LOAD_FONT8
+#define LOAD_GFXFF
+#define SMOOTH_FONT
+#define SPI_FREQUENCY 40000000
+#define SPI_READ_FREQUENCY 27000000
+#define SPI_TOUCH_FREQUENCY 2500000
+"""
 
 
 # ===========================================================================
@@ -376,6 +407,103 @@ def wait_for_device(port: str, timeout: int = 15) -> str | None:
 
 
 # ===========================================================================
+# Build helpers
+# ===========================================================================
+
+def resolve_app_dir(app_name: str | None) -> Path:
+    """Resolve the app directory from name or current working directory."""
+    if app_name:
+        app_dir = APPS_DIR / app_name
+        if not app_dir.exists():
+            print(f"Error: app '{app_name}' not found in {APPS_DIR.relative_to(REPO_ROOT)}/")
+            available = sorted(p.name for p in APPS_DIR.iterdir() if (p / "platformio.ini").exists())
+            if available:
+                print(f"  Available apps: {', '.join(available)}")
+            sys.exit(1)
+        return app_dir
+
+    # Check if we're inside an app directory
+    cwd = Path.cwd()
+    if (cwd / "platformio.ini").exists():
+        return cwd
+
+    print("Error: no app specified and no platformio.ini in current directory")
+    available = sorted(p.name for p in APPS_DIR.iterdir() if (p / "platformio.ini").exists())
+    if available:
+        print(f"  Available apps: {', '.join(available)}")
+    sys.exit(1)
+
+
+def write_user_setup(app_dir: Path):
+    """Write the TFT_eSPI User_Setup.h with correct Kublet pin config."""
+    pio = find_pio()
+    setup_path = app_dir / ".pio/libdeps/esp32dev/TFT_eSPI/User_Setup.h"
+    if not setup_path.parent.exists():
+        print("  Dependencies not installed. Running pio lib install...")
+        subprocess.run([pio, "lib", "install"], cwd=app_dir, check=True)
+
+    setup_path.write_text(USER_SETUP_H)
+    print(f"  ✓ Wrote User_Setup.h (SPI @ 40 MHz)")
+
+
+def ota_send(ip: str, firmware: Path, app_name: str):
+    """Upload firmware to device over WiFi OTA."""
+    size_kb = firmware.stat().st_size / 1024
+    print(f"📡 Sending '{app_name}' ({size_kb:.0f} KB) to {ip}...")
+
+    boundary = "----KubletOTA"
+    firmware_data = firmware.read_bytes()
+
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="filedata"; filename="firmware.bin"\r\n'
+        f"Content-Type: application/octet-stream\r\n"
+        f"\r\n"
+    ).encode() + firmware_data + f"\r\n--{boundary}--\r\n".encode()
+
+    url = f"http://{ip}/update"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = resp.read().decode()
+            print(f"  {result}")
+            print(f"  ✅ '{app_name}' deployed to {ip}")
+    except urllib.error.URLError as e:
+        print(f"  ✗ Upload failed: {e}")
+        sys.exit(1)
+
+
+# ===========================================================================
+# Subcommand: build
+# ===========================================================================
+
+def cmd_build(args: argparse.Namespace) -> None:
+    """Build/compile the firmware."""
+    app_dir = resolve_app_dir(getattr(args, "app", None))
+    app_name = app_dir.name
+    pio = find_pio()
+    print(f"Building '{app_name}'...")
+
+    write_user_setup(app_dir)
+
+    print(f"  Compiling...")
+    result = subprocess.run([pio, "run"], cwd=app_dir)
+    if result.returncode != 0:
+        print(f"  ✗ Build failed")
+        sys.exit(1)
+
+    firmware = app_dir / ".pio/build/esp32dev/firmware.bin"
+    size_kb = firmware.stat().st_size / 1024
+    print(f"  ✓ Build succeeded ({size_kb:.0f} KB)")
+
+
+# ===========================================================================
 # Subcommand: init
 # ===========================================================================
 
@@ -497,15 +625,8 @@ def cmd_logs(args: argparse.Namespace) -> None:
 
 def cmd_deploy(args: argparse.Namespace) -> None:
     """Build and send an app to the Kublet over WiFi OTA."""
-    app_name = args.app
-    app_dir = APPS_DIR / app_name
-
-    if not app_dir.is_dir():
-        print(f"Error: App '{app_name}' not found at {app_dir.relative_to(REPO_ROOT)}/")
-        available = sorted(p.name for p in APPS_DIR.iterdir() if p.is_dir() and (p / "platformio.ini").exists())
-        if available:
-            print(f"  Available apps: {', '.join(available)}")
-        sys.exit(1)
+    app_dir = resolve_app_dir(args.app)
+    app_name = app_dir.name
 
     # Resolve target IP
     ip = args.ip or load_kublet_ip()
@@ -516,25 +637,26 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 
     print(f"🚀 Deploying '{app_name}' to {ip}")
 
-    # Build
     firmware_bin = app_dir / ".pio" / "build" / "esp32dev" / "firmware.bin"
-    if not args.skip_build:
-        print(f"\n🔨 Building {app_name}...")
-        subprocess.run(["krate", "build"], cwd=app_dir)
-        # krate exits non-zero even on success; check the actual build output
-        if not firmware_bin.exists():
-            print("\n  ✗ Build failed — no firmware.bin produced.")
-            sys.exit(1)
-        print("  ✓ Build succeeded")
 
-    # Send
-    print(f"\n📡 Sending firmware to {ip}...")
-    result = subprocess.run(["krate", "send", ip], cwd=app_dir)
-    if result.returncode != 0:
-        print("\n  ✗ Send failed.")
+    if not args.skip_build:
+        pio = find_pio()
+        print(f"\n🔨 Building {app_name}...")
+        write_user_setup(app_dir)
+        print(f"  Compiling...")
+        result = subprocess.run([pio, "run"], cwd=app_dir)
+        if result.returncode != 0 or not firmware_bin.exists():
+            print("\n  ✗ Build failed.")
+            sys.exit(1)
+        size_kb = firmware_bin.stat().st_size / 1024
+        print(f"  ✓ Build succeeded ({size_kb:.0f} KB)")
+
+    if not firmware_bin.exists():
+        print(f"  ✗ No firmware found. Run without --skip-build first.")
         sys.exit(1)
 
-    print(f"\n✅ '{app_name}' deployed to {ip}")
+    print()
+    ota_send(ip, firmware_bin, app_name)
 
 
 # ===========================================================================
@@ -544,26 +666,37 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 def main():
     parser = argparse.ArgumentParser(
         prog="dev",
-        description="Kublet development tool.",
+        description="Kublet development tool — build, deploy, and manage your device.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 commands:
-  init     Flash dev firmware + WiFi credentials via USB
-  logs     Stream serial logs from the Kublet via USB
+  build    Compile firmware for an app
   deploy   Build and send an app to the Kublet over WiFi
+  logs     Stream serial logs from the Kublet via USB
+  init     Flash dev firmware + WiFi credentials via USB
 
 examples:
-  ./tools/dev init                            # auto-detect port, use .env creds
-  ./tools/dev init -p /dev/cu.usbserial-0001  # explicit serial port
-  ./tools/dev init --factory                  # restore factory firmware
-  ./tools/dev logs                            # stream logs (auto-detect port)
-  ./tools/dev logs hello                      # stream logs using hello app config
+  ./tools/dev build stock                     # compile the stock app
   ./tools/dev deploy badgers                  # build & send the badgers app
   ./tools/dev deploy hello --ip 192.168.1.50  # override IP address
   ./tools/dev deploy hello --skip-build       # send without rebuilding
+  ./tools/dev logs                            # stream logs (auto-detect port)
+  ./tools/dev init                            # flash dev firmware + WiFi creds
+  ./tools/dev init --factory                  # restore factory firmware
         """,
     )
     subparsers = parser.add_subparsers(dest="command", title="commands")
+
+    # -- build --
+    p_build = subparsers.add_parser(
+        "build",
+        help="Compile firmware (writes User_Setup.h with 40 MHz SPI)",
+    )
+    p_build.add_argument(
+        "app",
+        nargs="?",
+        help="App name (default: current directory)",
+    )
 
     # -- init --
     p_init = subparsers.add_parser(
@@ -625,7 +758,9 @@ examples:
         parser.print_help()
         sys.exit(1)
 
-    if args.command == "init":
+    if args.command == "build":
+        cmd_build(args)
+    elif args.command == "init":
         cmd_init(args)
     elif args.command == "logs":
         cmd_logs(args)

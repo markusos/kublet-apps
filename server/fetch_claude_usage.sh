@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
-# Launches "claude /usage" and parses the session/weekly percentages.
-# Outputs JSON: {"session":{"percent":N},"weekly":{"percent":N}}
+# fetch_claude_usage.sh — Fetch Claude Code session and weekly usage percentages.
+#
+# Launches `claude /usage` via expect, captures CLI output, and extracts
+# session and weekly usage percentages by parsing ANSI-stripped text.
+#
+# Requirements:
+#   - expect (usually pre-installed on macOS, `apt install expect` on Linux)
+#   - perl (for ANSI stripping)
+#   - claude CLI binary
+#
+# Environment variables:
+#   CLAUDE_BIN  - Path to claude binary (default: auto-detect via PATH or ~/.local/bin)
+#
+# Output (stdout):
+#   JSON: {"session":{"percent":N},"weekly":{"percent":N}}
+#
+# Exit codes:
+#   0 - Success (JSON always printed, even on parse failure with 0% fallback)
+#   1 - Claude binary not found
 
 # Find claude binary
 if [ -n "$CLAUDE_BIN" ]; then

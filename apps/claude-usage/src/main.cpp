@@ -104,7 +104,7 @@ void fetchUsageData() {
     return;
   }
 
-  http.begin(serverUrl + "/usage");
+  http.begin(serverUrl + "/api/usage");
   int httpResponseCode = http.GET();
 
   if (httpResponseCode == HTTP_CODE_OK) {

@@ -20,8 +20,7 @@ Documentation on the Kublet hardware, firmware, Bluetooth OTA protocol, and the 
 - [WiFi OTA](#wifi-ota)
 - [NVS (Non-Volatile Storage)](#nvs-non-volatile-storage)
 - [Tools](#tools)
-  - [tools/dev (init CLI)](#toolsdev-init-cli)
-  - [krate CLI](#krate-cli)
+  - [tools/dev](#toolsdev)
   - [esptool.py](#esptoolpy)
   - [nvs_partition_gen.py](#nvs_partition_genpy)
 - [Workflow: Deploying Apps Without the iOS App](#workflow-deploying-apps-without-the-ios-app)
@@ -42,7 +41,7 @@ Documentation on the Kublet hardware, firmware, Bluetooth OTA protocol, and the 
 | Crystal          | 40 MHz                                     |
 | Display          | 240×240 ST7789 LCD (SPI)                   |
 | USB Serial Chip  | CP2102 or similar (macOS: `/dev/cu.usbserial-XXXX`) |
-| Input            | Single button                              |
+| Input            | Single button (GPIO 19, active LOW)        |
 | Flash Encryption | **Enabled** (hardware-level)               |
 | Secure Boot      | **Likely enabled** (rejects unsigned OTA)  |
 
@@ -78,7 +77,7 @@ The Kublet uses a 240×240 ST7789 LCD driven by TFT_eSPI. The **exact pin config
 #define SPI_TOUCH_FREQUENCY 2500000
 ```
 
-The `krate build` command automatically writes this to `.pio/libdeps/esp32dev/TFT_eSPI/User_Setup.h` before compiling. **Building without this config will crash the device** — the display won't initialize and the app will fail.
+The `./tools/dev build` command automatically writes this to `.pio/libdeps/esp32dev/TFT_eSPI/User_Setup.h` before compiling (with SPI at 40 MHz instead of the original 1 MHz). **Building without this config will crash the device** — the display won't initialize and the app will fail.
 
 ---
 
@@ -115,10 +114,10 @@ There are two types of firmware binaries:
 - This firmware's sole purpose is to provide a WiFi OTA endpoint (`POST /update`) so you can wirelessly flash community apps.
 
 ### Community App Firmware (built from source)
-- Built with `krate build` from the `apps/` directory.
+- Built with `./tools/dev build <app-name>` from the project root.
 - Output `.bin` in `.pio/build/esp32dev/firmware.bin`.
 - Includes OTAServer library so subsequent flashes can be done wirelessly.
-- Must be built with the correct TFT_eSPI pin config (handled by `krate`).
+- Must be built with the correct TFT_eSPI pin config (handled by `./tools/dev build`).
 
 ---
 
@@ -190,8 +189,8 @@ The OTA endpoint expects a **multipart form upload** with the field name **`file
 # Using curl:
 curl -X POST -F "filedata=@firmware.bin" http://<device-ip>/update
 
-# Using krate (preferred, from within app dir):
-krate send <device-ip>
+# Using tools/dev (preferred):
+./tools/dev deploy <app-name>
 ```
 
 > ⚠️ The form field must be `filedata`, NOT `firmware`. Using the wrong field name will appear to succeed but won't actually flash.
@@ -240,15 +239,28 @@ Since BLE config write doesn't persist to NVS, we generate NVS partition images 
 
 ## Tools
 
-### tools/dev (init CLI)
+### tools/dev
 
-Wrapper script for device initialization. Handles WiFi credentials, NVS generation, USB flashing, and post-flash verification in one command.
+All-in-one development tool for building, deploying, and managing the Kublet device. Replaces the original `krate` Go CLI.
 
-```bash
-./tools/dev init                             # flash dev firmware + WiFi creds
-./tools/dev init --factory                   # restore factory firmware
-./tools/dev init -p /dev/cu.usbserial-XXXX   # explicit serial port
-```
+**Key commands:**
+| Command | Description |
+|---|---|
+| `./tools/dev build [app]` | Compile firmware (auto-configures TFT_eSPI pins with 40 MHz SPI) |
+| `./tools/dev deploy <app>` | Build and send firmware over WiFi OTA |
+| `./tools/dev deploy <app> --skip-build` | Send without rebuilding |
+| `./tools/dev logs [app]` | Stream serial logs via USB |
+| `./tools/dev init` | Flash dev firmware + WiFi credentials via USB |
+| `./tools/dev init --factory` | Restore factory firmware |
+
+**What `build` does internally:**
+1. Writes the correct `User_Setup.h` to `.pio/libdeps/esp32dev/TFT_eSPI/User_Setup.h` (40 MHz SPI)
+2. Runs `pio run` to compile
+
+**What `deploy` does internally:**
+1. Runs the build step (unless `--skip-build`)
+2. Reads `.pio/build/esp32dev/firmware.bin`
+3. POSTs it as multipart form (`filedata` field) to `http://<ip>/update`
 
 Configuration via `tools/.env` (auto-created on first run):
 ```
@@ -257,34 +269,6 @@ KUBLET_PW=<WiFi password>
 ```
 
 > Generated files (`nvs_wifi.bin`, `nvs_wifi.csv`) are automatically cleaned up after flashing since they contain WiFi secrets. They are also in `.gitignore`.
-
-### krate CLI
-
-The official Kublet development CLI ([github.com/kublet/krate](https://github.com/kublet/krate)). Written in Go.
-
-**Install (macOS):**
-```bash
-brew tap kublet/tools
-brew install krate
-```
-
-**Key commands:**
-| Command | Description |
-|---|---|
-| `krate init <name>` | Scaffold a new app project |
-| `krate deps install` | Install PlatformIO dependencies |
-| `krate build` | Compile firmware (auto-configures TFT_eSPI pins) |
-| `krate send <ip>` | Flash firmware over WiFi OTA |
-| `krate monitor` | Open serial monitor |
-| `krate publish` | Generate `manifest.yaml` for community submission |
-
-**What `krate build` does internally:**
-1. Writes the correct `User_Setup.h` to `.pio/libdeps/esp32dev/TFT_eSPI/User_Setup.h`
-2. Runs `pio run` to compile
-
-**What `krate send` does internally:**
-1. Reads `.pio/build/esp32dev/firmware.bin`
-2. POSTs it as multipart form (`filedata` field) to `http://<ip>/update`
 
 ### esptool.py
 
@@ -316,8 +300,8 @@ ESP-IDF tool for generating NVS partition binaries from CSV. Located at:
 ### Prerequisites
 
 - USB cable connected to Kublet
-- `krate` installed (`brew install kublet/tools/krate`)
 - PlatformIO installed (VS Code extension or CLI)
+- `uv` installed (for running Python tools)
 
 ### Step 1: Flash Dev Firmware + WiFi Creds (USB, one-time)
 
@@ -335,20 +319,13 @@ This will:
 
 To restore factory firmware instead: `./tools/dev init --factory`
 
-### Step 2: Build the App (krate)
+### Step 2: Build and Deploy
 
 ```bash
-cd apps/<app-name>
-krate build
+./tools/dev deploy <app-name>
 ```
 
-### Step 3: Flash Over WiFi (krate)
-
-```bash
-krate send <device-ip>
-```
-
-The device reboots into the new app. Since every community app includes OTAServer, you can repeat steps 2–3 to flash different apps wirelessly.
+This builds the firmware and sends it over WiFi OTA. The device reboots into the new app. Since every community app includes OTAServer, you can repeat this step to flash different apps wirelessly.
 
 ### Changing WiFi Networks
 
@@ -383,10 +360,12 @@ Note: the factory firmware does NOT include WiFi OTA, so you'll need to run `./t
 
 2. **BLE OTA is blocked by Secure Boot.** Upload completes 100% but the device rejects unsigned firmware at `esp_ota_end()` and rolls back. There is no workaround without the manufacturer's signing key.
 
-3. **Building without TFT_eSPI config crashes the device.** Always use `krate build` (which writes the correct `User_Setup.h`) rather than raw `pio run`. If you must use `pio run` directly, add the pin defines as `build_flags` in `platformio.ini` (see [Display section](#display-tft_espi)).
+3. **Building without TFT_eSPI config crashes the device.** Always use `./tools/dev build` (which writes the correct `User_Setup.h`) rather than raw `pio run`. If you must use `pio run` directly, add the pin defines as `build_flags` in `platformio.ini` (see [Display section](#display-tft_espi)).
 
-4. **WiFi OTA form field is `filedata`, not `firmware`.** If using `curl` directly instead of `krate send`, use `-F "filedata=@firmware.bin"`.
+4. **WiFi OTA form field is `filedata`, not `firmware`.** If using `curl` directly instead of `./tools/dev deploy`, use `-F "filedata=@firmware.bin"`.
 
 5. **Factory firmware binaries are encrypted on disk.** They can still be flashed via `esptool.py` because the ESP32 handles encryption transparently. But you cannot inspect their contents or modify them.
 
-6. **The KGFX library.** The krate template includes `kublet/KGFX` — a Kublet-specific graphics helper library. Community apps may or may not use it. The badgers app uses `TFT_eSPI` and `AnimatedGIF` directly.
+6. **The KGFX library.** `kublet/KGFX` is a Kublet-specific graphics helper library. Community apps may or may not use it. The badgers app uses `TFT_eSPI` and `AnimatedGIF` directly.
+
+7. **Button is on GPIO 19.** Active LOW with internal pull-up. Not documented by the manufacturer; determined via GPIO scanning.
