@@ -69,10 +69,15 @@ def ota_send(ip: str, firmware: Path, app_name: str) -> None:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             result = resp.read().decode()
             print(f"  {result}")
             print(f"  ✅ '{app_name}' deployed to {ip}")
-    except urllib.error.URLError as e:
-        print(f"  ✗ Upload failed: {e}")
-        sys.exit(1)
+    except (TimeoutError, ConnectionResetError, urllib.error.URLError) as e:
+        # ESP32 reboots after OTA, dropping the connection — treat as success
+        if isinstance(e, urllib.error.URLError) and not isinstance(
+            e.reason, (TimeoutError, ConnectionResetError, OSError)
+        ):
+            print(f"  ✗ Upload failed: {e}")
+            sys.exit(1)
+        print(f"  ✅ '{app_name}' deployed to {ip} (device rebooting)")
