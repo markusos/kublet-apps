@@ -32,7 +32,10 @@ struct TickerData {
   float prevClose;
   float lastPrice;
   float pctChange;
-  bool fetched; // has data been fetched at least once
+  bool fetched;    // has data been fetched at least once
+  bool isCrypto;   // true for 24/7 assets like BTC-USD
+  char startLabel[6]; // first x-axis time label (e.g. "9:30" or "20:00")
+  char endLabel[6];   // last x-axis time label
 };
 
 TickerData tickers[NUM_TICKERS];
@@ -225,16 +228,14 @@ void drawUI() {
   ui.tft.setTTFFont(Arial_12);
   ui.tft.setTextColor(COLOR_GRAY, TFT_BLACK);
 
+  // Start label (left)
   ui.tft.setCursor(CHART_X, CHART_BOTTOM + 8);
-  ui.tft.print("9:30");
+  ui.tft.print(td.startLabel);
 
-  int midX = CHART_X + 30 * CHART_W / 77;
-  ui.tft.setCursor(midX - 10, CHART_BOTTOM + 8);
-  ui.tft.print("12:00");
-
-  int rw = ui.tft.TTFtextWidth("16:00");
+  // End label (right)
+  int rw = ui.tft.TTFtextWidth(td.endLabel);
   ui.tft.setCursor(CHART_X + CHART_W - rw, CHART_BOTTOM + 8);
-  ui.tft.print("16:00");
+  ui.tft.print(td.endLabel);
 }
 
 // Check if US stock market is currently open using NTP time
@@ -335,25 +336,56 @@ void fetchTickerData(int idx) {
   td.lastPrice = result["meta"]["regularMarketPrice"] | openPrice;
   td.pctChange = (td.prevClose > 0) ? (td.lastPrice - td.prevClose) / td.prevClose * 100.0f : 0.0f;
 
-  // Build points array: deltas from previous close
+  // Detect crypto (trades 24/7, Yahoo returns >100 points for 1d)
+  td.isCrypto = (timestamps.size() > 100);
+
+  // Build points array: map Yahoo data proportionally into MAX_POINTS slots
   td.numPoints = 0;
   memset(td.pointValid, 0, sizeof(td.pointValid));
 
+  size_t total = min(timestamps.size(), closes.size());
+
+  // Generate x-axis time labels from first/last timestamps
   long firstTs = timestamps[0].as<long>();
+  long lastTs = timestamps[total - 1].as<long>();
 
-  for (size_t i = 0; i < timestamps.size() && i < closes.size(); i++) {
-    if (closes[i].isNull())
-      continue;
+  // Convert to ET (UTC-4 during EDT, UTC-5 during EST)
+  // configTime already set the TZ, so use localtime
+  struct tm tmBuf;
+  time_t ft = (time_t)firstTs;
+  localtime_r(&ft, &tmBuf);
+  snprintf(td.startLabel, sizeof(td.startLabel), "%d:%02d", tmBuf.tm_hour, tmBuf.tm_min);
 
-    long ts = timestamps[i].as<long>();
-    int ptIdx = (int)((ts - firstTs) / 300);
+  time_t lt = (time_t)lastTs;
+  localtime_r(&lt, &tmBuf);
+  snprintf(td.endLabel, sizeof(td.endLabel), "%d:%02d", tmBuf.tm_hour, tmBuf.tm_min);
 
-    if (ptIdx >= 0 && ptIdx < MAX_POINTS) {
-      float closeVal = closes[i].as<float>();
-      td.points[ptIdx] = closeVal - td.prevClose;
-      td.pointValid[ptIdx] = true;
-      if (ptIdx + 1 > td.numPoints)
-        td.numPoints = ptIdx + 1;
+  if (!td.isCrypto) {
+    // Stocks: map by 5-min intervals from market open
+    for (size_t i = 0; i < total; i++) {
+      if (closes[i].isNull())
+        continue;
+      long ts = timestamps[i].as<long>();
+      int ptIdx = (int)((ts - firstTs) / 300);
+      if (ptIdx >= 0 && ptIdx < MAX_POINTS) {
+        td.points[ptIdx] = closes[i].as<float>() - td.prevClose;
+        td.pointValid[ptIdx] = true;
+        if (ptIdx + 1 > td.numPoints)
+          td.numPoints = ptIdx + 1;
+      }
+    }
+  } else {
+    // Crypto: downsample proportionally into MAX_POINTS slots
+    for (size_t i = 0; i < total; i++) {
+      if (closes[i].isNull())
+        continue;
+      int ptIdx = (total <= 1) ? 0 : (int)(i * (MAX_POINTS - 1) / (total - 1));
+      if (ptIdx >= 0 && ptIdx < MAX_POINTS) {
+        td.points[ptIdx] = closes[i].as<float>() - td.prevClose;
+        td.pointValid[ptIdx] = true;
+        if (ptIdx + 1 > td.numPoints)
+          td.numPoints = ptIdx + 1;
+      }
     }
   }
 
