@@ -1,5 +1,6 @@
 """Build firmware and upload over WiFi OTA."""
 
+import http.client
 import subprocess
 import sys
 import urllib.error
@@ -41,43 +42,70 @@ def build_firmware(app_dir: Path) -> Path:
     return firmware
 
 
+def _print_progress(sent: int, total: int) -> None:
+    """Print an inline progress bar."""
+    pct = sent * 100 // total
+    bar_len = 30
+    filled = bar_len * sent // total
+    bar = "█" * filled + "░" * (bar_len - filled)
+    print(f"\r  {bar} {pct:3d}% ({sent // 1024}/{total // 1024} KB)", end="", flush=True)
+
+
 def ota_send(ip: str, firmware: Path, app_name: str) -> None:
-    """Upload firmware to device over WiFi OTA."""
+    """Upload firmware to device over WiFi OTA with progress bar."""
     size_kb = firmware.stat().st_size / 1024
     print(f"📡 Sending '{app_name}' ({size_kb:.0f} KB) to {ip}...")
 
     boundary = "----KubletOTA"
     firmware_data = firmware.read_bytes()
 
-    body = (
-        (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="filedata"; filename="firmware.bin"\r\n'
-            f"Content-Type: application/octet-stream\r\n"
-            f"\r\n"
-        ).encode()
-        + firmware_data
-        + f"\r\n--{boundary}--\r\n".encode()
-    )
+    header_part = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="filedata"; filename="firmware.bin"\r\n'
+        f"Content-Type: application/octet-stream\r\n"
+        f"\r\n"
+    ).encode()
+    footer_part = f"\r\n--{boundary}--\r\n".encode()
 
-    url = f"http://{ip}/update"
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-        method="POST",
-    )
+    content_length = len(header_part) + len(firmware_data) + len(footer_part)
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            result = resp.read().decode()
-            print(f"  {result}")
-            print(f"  ✅ '{app_name}' deployed to {ip}")
-    except (TimeoutError, ConnectionResetError, urllib.error.URLError) as e:
-        # ESP32 reboots after OTA, dropping the connection — treat as success
-        if isinstance(e, urllib.error.URLError) and not isinstance(
-            e.reason, (TimeoutError, ConnectionResetError, OSError)
-        ):
-            print(f"  ✗ Upload failed: {e}")
-            sys.exit(1)
-        print(f"  ✅ '{app_name}' deployed to {ip} (device rebooting)")
+        conn = http.client.HTTPConnection(ip, timeout=60)
+        conn.putrequest("POST", "/update")
+        conn.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
+        conn.putheader("Content-Length", str(content_length))
+        conn.endheaders()
+
+        # Send multipart header
+        conn.send(header_part)
+
+        # Send firmware in chunks with progress
+        chunk_size = 8192
+        total = len(firmware_data)
+        sent = 0
+        while sent < total:
+            end = min(sent + chunk_size, total)
+            conn.send(firmware_data[sent:end])
+            sent = end
+            _print_progress(sent, total)
+
+        # Send multipart footer
+        conn.send(footer_part)
+        print()  # newline after progress bar
+
+        # Short timeout for response — device usually reboots before replying
+        print("  ⏳ Waiting for device to flash...", end="", flush=True)
+        conn.sock.settimeout(10)
+        try:
+            resp = conn.getresponse()
+            resp.read()
+            print(f"\r  ✅ '{app_name}' deployed to {ip}{'':30}")
+        except (TimeoutError, ConnectionResetError, OSError):
+            print(f"\r  ✅ '{app_name}' deployed to {ip} (device rebooting){'':10}")
+        finally:
+            conn.close()
+
+    except (TimeoutError, ConnectionResetError, OSError) as e:
+        print()
+        print(f"  ✗ Upload failed: {e}")
+        sys.exit(1)

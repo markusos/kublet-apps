@@ -8,8 +8,6 @@ as writing a handler and adding it to the ROUTES dict.
 
 Current endpoints:
   GET /api/usage        — Claude Code session/weekly usage percentages
-  GET /api/chart        — Intraday stock chart data (default: VOO)
-  GET /api/chart?ticker=SPY  — Custom ticker
 
 Environment variables:
   PORT       - Server port (default: 8198)
@@ -27,13 +25,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from zoneinfo import ZoneInfo
-
-import yfinance as yf
 
 PORT = int(os.environ.get("PORT", "8198"))
 SCRIPT_DIR = Path(__file__).parent
-ET = ZoneInfo("America/New_York")
 
 # ---------------------------------------------------------------------------
 # Cache helper
@@ -83,91 +77,12 @@ def get_usage_data(**_kwargs) -> dict:
     return cached("usage", 300, _fetch)
 
 
-def get_chart_data(*, query_params: dict | None = None, **_kwargs) -> dict:
-    """Fetch intraday stock chart data via yfinance."""
-    ticker = "VOO"
-    if query_params and "ticker" in query_params:
-        ticker = query_params["ticker"][0].upper()
-
-    def _fetch():
-        try:
-            return _fetch_chart(ticker)
-        except Exception as e:
-            log(f"chart fetch error ({ticker}): {e}")
-            return {
-                "ticker": ticker,
-                "open": 0,
-                "last": 0,
-                "pct": 0,
-                "market_open": False,
-                "points": [],
-            }
-
-    return cached(f"chart:{ticker}", 60, _fetch)
-
-
-def _fetch_chart(ticker: str) -> dict:
-    """Download intraday data and build compact chart payload."""
-    now_et = datetime.now(ET)
-
-    # Try today first; if empty (weekend/holiday), get last 5 days
-    df = yf.download(ticker, period="1d", interval="5m", progress=False)
-    if df.empty:
-        df = yf.download(ticker, period="5d", interval="5m", progress=False)
-
-    if df.empty:
-        raise ValueError(f"No data returned for {ticker}")
-
-    # Handle multi-level columns from yfinance (ticker in second level)
-    if isinstance(df.columns, __import__("pandas").MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    # Filter to last trading day
-    df.index = df.index.tz_convert(ET)
-    last_date = df.index[-1].date()
-    df = df[df.index.date == last_date]
-
-    open_price = float(df["Open"].iloc[0])
-    last_price = float(df["Close"].iloc[-1])
-    pct = round((last_price - open_price) / open_price * 100, 2) if open_price else 0
-
-    # Build points: [index, delta] where index = 5-min intervals from 9:30 ET
-    market_open_time = df.index[0].replace(hour=9, minute=30, second=0, microsecond=0)
-    points = []
-    for ts, row in df.iterrows():
-        minutes_since_open = (ts - market_open_time).total_seconds() / 60
-        idx = int(round(minutes_since_open / 5))
-        if 0 <= idx <= 77:
-            delta = round(float(row["Close"]) - open_price, 2)
-            points.append([idx, delta])
-
-    # Determine if market is currently open
-    is_today = last_date == now_et.date()
-    weekday = now_et.weekday() < 5
-    in_hours = 9 * 60 + 30 <= now_et.hour * 60 + now_et.minute <= 16 * 60
-    market_open = is_today and weekday and in_hours
-
-    log(
-        f"chart: {ticker} open={open_price} last={last_price} pct={pct}% pts={len(points)} market={'open' if market_open else 'closed'}"
-    )
-
-    return {
-        "ticker": ticker,
-        "open": round(open_price, 2),
-        "last": round(last_price, 2),
-        "pct": pct,
-        "market_open": market_open,
-        "points": points,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Route registry
 # ---------------------------------------------------------------------------
 
 ROUTES = {
     "/api/usage": {"handler": get_usage_data, "cache_ttl": 300},
-    "/api/chart": {"handler": get_chart_data, "cache_ttl": 60},
 }
 
 
