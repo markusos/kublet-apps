@@ -8,7 +8,6 @@ dependencies = [
     "esptool>=4.8.1",
     "esp-idf-nvs-partition-gen>=0.2.0",
     "pyserial",
-    "yfinance>=0.2.0",
 ]
 
 [project.optional-dependencies]
