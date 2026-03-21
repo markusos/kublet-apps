@@ -10,25 +10,21 @@ Due to the Kublet display refresh rate the gif is not as smoth as the gif here:
 
 To replace with your own gif, create a 240x240 px gif and use a tool like [image_to_c](https://github.com/bitbank2/image_to_c) to convert it to c code, like in `apps/badgers/src/badgers.h`
 
-# Deploy
-
-Load the develop app onto the kublet
-
-Then from your PlatformIO terminal session, run
+## Dependencies
 
 ```
-krate send <kublet_ip>
+bodmer/TFT_eSPI@^2.5.0
+kublet/OTAServer@^1.0.4
+bitbank2/AnimatedGIF@^2.1.1
 ```
 
-To monitor output run:
+## Build & Deploy
 
-```
-krate monitor
+```bash
+./tools/dev build badgers       # Compile
+./tools/dev deploy badgers      # OTA deploy to device
+./tools/dev init                # First-time USB flash + WiFi setup
+./tools/dev logs                # Stream serial output
 ```
 
-If connected it should print
-
-```
-Badger Badger Badger...
-```
-for each render cycle
+Serial output prints `Badger Badger Badger...` for each render cycle.
