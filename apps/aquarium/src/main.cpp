@@ -24,7 +24,7 @@ uint16_t CLR_BUBBLE_HI;
 #define SAND_Y 215
 
 // --- SEAWEED ---
-#define NUM_WEEDS 6
+#define NUM_WEEDS 8
 struct Seaweed {
   int16_t x, baseY;
   int8_t segments;
@@ -34,7 +34,7 @@ struct Seaweed {
 Seaweed weeds[NUM_WEEDS];
 
 // --- KELP (tall, lush plants) ---
-#define NUM_KELP 3
+#define NUM_KELP 4
 struct Kelp {
   int16_t x, baseY;
   int8_t segments;   // 10-16 segments = tall
@@ -42,6 +42,26 @@ struct Kelp {
   float phase, speed;
 };
 Kelp kelps[NUM_KELP];
+
+// --- CORAL (organic structures) ---
+#define NUM_CORAL 2
+#define CORAL_MAX_ARMS 5
+struct Coral {
+  int16_t x, baseY;
+  int8_t numArms;
+  uint16_t color1, color2;
+  float phase, speed;
+  // Per-arm randomized shape params
+  float armAngle[CORAL_MAX_ARMS];   // growth direction
+  float armCurve[CORAL_MAX_ARMS];   // how much it curves
+  int8_t armLen[CORAL_MAX_ARMS];    // length in segments
+  int8_t armThick[CORAL_MAX_ARMS];  // thickness
+};
+Coral corals[NUM_CORAL];
+
+// Total plant slots for spacing: weeds + kelp + coral
+#define TOTAL_PLANTS (NUM_WEEDS + NUM_KELP + NUM_CORAL)
+int16_t plantPositions[TOTAL_PLANTS];
 
 // --- BUBBLES ---
 #define MAX_BUBBLES 15
@@ -54,7 +74,7 @@ Bubble bubbles[MAX_BUBBLES];
 
 // --- CREATURES ---
 enum CreatureType { FISH_SMALL, FISH_MED, FISH_LARGE, JELLYFISH, CRAB, SEAHORSE };
-#define MAX_CREATURES 10
+#define MAX_CREATURES 9
 
 struct Creature {
   CreatureType type;
@@ -69,7 +89,7 @@ Creature creatures[MAX_CREATURES];
 
 int themeIndex = 0;
 bool buttonWasPressed = false;
-unsigned long lastFrame = 0, lastBubble = 0, lastSpawn = 0;
+unsigned long lastFrame = 0, lastBubble = 0;
 
 struct Theme {
   uint8_t wr, wg, wb, sr, sg, sb;
@@ -523,10 +543,26 @@ void drawBackground() {
   pebble(200, 222, 5, 110, 100, 85);
 }
 
+// --- PLANT SPACING ---
+// Distribute plant positions evenly across the screen width with some jitter
+void assignPlantPositions() {
+  int spacing = (SW - 20) / TOTAL_PLANTS; // ~13px apart for 16 plants
+  for (int i = 0; i < TOTAL_PLANTS; i++) {
+    plantPositions[i] = 10 + i * spacing + random(max(1, spacing - 6));
+  }
+  // Shuffle to randomize which plant type gets which slot
+  for (int i = TOTAL_PLANTS - 1; i > 0; i--) {
+    int j = random(i + 1);
+    int16_t tmp = plantPositions[i];
+    plantPositions[i] = plantPositions[j];
+    plantPositions[j] = tmp;
+  }
+}
+
 // --- SEAWEED ---
 void initWeeds() {
   for (int i = 0; i < NUM_WEEDS; i++) {
-    weeds[i].x = 15 + random(210);
+    weeds[i].x = plantPositions[i];
     weeds[i].baseY = SAND_Y;
     weeds[i].segments = 5 + random(6);
     int shade = random(60);
@@ -562,7 +598,7 @@ void drawWeeds() {
 // --- KELP ---
 void initKelp() {
   for (int i = 0; i < NUM_KELP; i++) {
-    kelps[i].x = 30 + random(180);
+    kelps[i].x = plantPositions[NUM_WEEDS + i];
     kelps[i].baseY = SAND_Y;
     kelps[i].segments = 10 + random(7); // 10-16 segments = very tall
     int shade = random(40);
@@ -613,6 +649,106 @@ void drawKelp() {
               fb.fillRect(lsx, lsy - stripY, 2, lh, k.colorLeaf);
           }
         }
+      }
+    }
+  }
+}
+
+// --- CORAL ---
+void initCoral() {
+  for (int i = 0; i < NUM_CORAL; i++) {
+    Coral& c = corals[i];
+    c.x = plantPositions[NUM_WEEDS + NUM_KELP + i];
+    c.baseY = SAND_Y;
+    c.numArms = 3 + random(3); // 3-5 arms
+    c.phase = random(1000) / 100.0f;
+    c.speed = 0.4f + random(40) / 100.0f;
+    // Spread arms across an arc, with randomness
+    // Spread arms in an upward arc from -0.8 to +0.8 rad (~-45° to +45° from vertical)
+    float arcStart = -0.8f;
+    float arcSpan = 1.6f;
+    for (int a = 0; a < c.numArms; a++) {
+      c.armAngle[a] = arcStart + arcSpan * a / (c.numArms - 1 + 0.01f) + (random(100) - 50) / 300.0f;
+      // Curve gently inward (toward center), never enough to point downward
+      c.armCurve[a] = (random(100) - 50) / 400.0f;
+      c.armLen[a] = 4 + random(5);   // 4-8 segments
+      c.armThick[a] = 2 + random(2); // 2-3px
+    }
+    int r = random(3);
+    if (r == 0) { // pink/red
+      c.color1 = ui.tft.color565(200 + random(55), 60 + random(40), 80 + random(40));
+      c.color2 = ui.tft.color565(255, 140 + random(60), 160 + random(40));
+    } else if (r == 1) { // orange
+      c.color1 = ui.tft.color565(200 + random(55), 100 + random(40), 30 + random(30));
+      c.color2 = ui.tft.color565(255, 180 + random(40), 80 + random(40));
+    } else { // purple
+      c.color1 = ui.tft.color565(140 + random(40), 50 + random(40), 180 + random(55));
+      c.color2 = ui.tft.color565(200 + random(40), 120 + random(40), 255);
+    }
+  }
+}
+
+void updateCoral(float dt) {
+  for (int i = 0; i < NUM_CORAL; i++) {
+    corals[i].phase += dt * corals[i].speed;
+    if (corals[i].phase > 6.2832f) corals[i].phase -= 6.2832f;
+  }
+}
+
+void drawCoral() {
+  int yEnd = stripY + STRIP_H;
+  for (int i = 0; i < NUM_CORAL; i++) {
+    Coral& c = corals[i];
+    float bx = c.x, by = c.baseY;
+
+    // Small mound base
+    int baseR = 4 + c.numArms;
+    int baseY = (int)by - 2;
+    if (baseY + 4 >= stripY && baseY < yEnd)
+      fb.fillRect((int)bx - baseR / 2, baseY - stripY, baseR, 4, c.color1);
+
+    // Each arm grows outward as a curved tendril
+    for (int a = 0; a < c.numArms; a++) {
+      float angle = c.armAngle[a];
+      float curve = c.armCurve[a];
+      int len = c.armLen[a];
+      int thick = c.armThick[a];
+
+      // Trace the arm segment by segment
+      float px = bx, py = by - 4;
+      float dir = angle;
+      for (int s = 0; s < len; s++) {
+        // Animate gentle sway that increases toward tip
+        float sway = sin(c.phase * 1.2f + s * 0.5f + a * 1.7f) * (0.3f + s * 0.15f);
+        dir = angle + curve * s + sway * 0.3f;
+        // Clamp so arms always point upward (between -90° and +90°)
+        if (dir < -1.4f) dir = -1.4f;
+        if (dir > 1.4f) dir = 1.4f;
+
+        float dx = sin(dir) * 5.0f;
+        float dy = -cos(dir) * 5.0f; // grow upward
+
+        float nx = px + dx;
+        float ny = py + dy;
+
+        int sx = (int)nx, sy = (int)ny;
+        int w = max(1, thick - s / 3); // taper toward tip
+
+        // Alternate colors for organic look
+        uint16_t col = (s % 2 == 0) ? c.color1 : c.color2;
+        // Draw segment as a small rect connecting prev to current
+        if (sy + 6 >= stripY && sy - 2 < yEnd)
+          fb.fillRect(sx - w / 2, sy - stripY, w, 5, col);
+
+        // Tip: small bulb
+        if (s == len - 1) {
+          int tipWave = (int)(sin(c.phase * 2.0f + a * 2.3f) * 1.5f);
+          if (sy - 3 + tipWave + 3 >= stripY && sy - 3 + tipWave < yEnd)
+            fb.fillRect(sx - 1, sy - 3 + tipWave - stripY, 3, 3, c.color2);
+        }
+
+        px = nx;
+        py = ny;
       }
     }
   }
@@ -684,7 +820,7 @@ void spawnCreature(int idx, CreatureType type) {
   c.state = 0;
   switch (type) {
     case FISH_SMALL:
-      c.x = (c.dir == 1) ? -20 : SW + 20;
+      c.x = 20 + random(200);
       c.y = 30 + random(150);
       c.vx = (0.6f + random(100) / 100.0f) * c.dir;
       c.vy = 0;
@@ -693,7 +829,7 @@ void spawnCreature(int idx, CreatureType type) {
       c.color2 = accentColor(c.color1);
       break;
     case FISH_MED:
-      c.x = (c.dir == 1) ? -25 : SW + 25;
+      c.x = 20 + random(200);
       c.y = 40 + random(120);
       c.vx = (0.4f + random(60) / 100.0f) * c.dir;
       c.vy = 0;
@@ -702,7 +838,7 @@ void spawnCreature(int idx, CreatureType type) {
       c.color2 = accentColor(c.color1);
       break;
     case FISH_LARGE:
-      c.x = (c.dir == 1) ? -40 : SW + 40;
+      c.x = 25 + random(190);
       c.y = 50 + random(100);
       c.vx = (0.2f + random(30) / 100.0f) * c.dir;
       c.vy = 0;
@@ -712,7 +848,7 @@ void spawnCreature(int idx, CreatureType type) {
       break;
     case JELLYFISH:
       c.x = 30 + random(180);
-      c.y = -30;
+      c.y = 5;
       c.vx = (random(100) - 50) / 200.0f;
       c.vy = 0.3f + random(30) / 100.0f;
       c.dir = 1;
@@ -721,7 +857,7 @@ void spawnCreature(int idx, CreatureType type) {
       c.color2 = ui.tft.color565(255, 180, 255);
       break;
     case CRAB:
-      c.x = (c.dir == 1) ? -15 : SW + 15;
+      c.x = 20 + random(200);
       c.y = SAND_Y - 2;
       c.vx = (0.2f + random(30) / 100.0f) * c.dir;
       c.vy = 0;
@@ -731,10 +867,9 @@ void spawnCreature(int idx, CreatureType type) {
       break;
     case SEAHORSE:
       c.x = 20 + random(200);
-      c.y = (c.dir == 1) ? SH + 20 : -20;
-      c.vx = (random(100) - 50) / 300.0f;
-      c.vy = -0.2f - random(30) / 100.0f;
-      c.dir = (random(2) == 0) ? 1 : -1;
+      c.y = 40 + random(120);
+      c.vx = (0.15f + random(15) / 100.0f) * c.dir;
+      c.vy = (random(2) == 0) ? (0.15f + random(10) / 100.0f) : -(0.15f + random(10) / 100.0f);
       c.animSpeed = 2.5f;
       c.color1 = ui.tft.color565(255, 180, 50);
       c.color2 = ui.tft.color565(255, 220, 100);
@@ -754,24 +889,45 @@ void updateCreatures(float dt) {
     if (c.type == FISH_SMALL || c.type == FISH_MED || c.type == FISH_LARGE) {
       c.y += sin(c.animPhase * 0.5f) * 0.15f;
       if (random(500) == 0) spawnBubble(c.x + c.dir * 5, c.y - 3);
+      // Random direction flip (~once every 8-15 seconds at 30fps)
+      if (random(300) == 0) {
+        c.dir = -c.dir;
+        c.vx = -c.vx;
+      }
+      // Randomly adjust diagonal angle (~every 3-5 seconds)
+      if (random(120) == 0) {
+        c.vy = (random(100) - 50) / 200.0f; // slight up/down drift
+      }
+      // Clamp vertical position to stay in water
+      if (c.y < 20) { c.y = 20; c.vy = max(0.05f, fabs(c.vy)); }
+      if (c.y > SAND_Y - 15) { c.y = SAND_Y - 15; c.vy = -max(0.05f, fabs(c.vy)); }
     }
     if (c.type == JELLYFISH) {
-      if (c.state == 0) { c.vy = 0.15f; if (c.y > SAND_Y - 40) c.state = 1; }
-      else { c.vy = -0.4f; if (c.y < 20) c.state = 0; }
+      if (c.state == 0) { c.vy = 0.15f; if (c.y > SAND_Y - 40) { c.y = SAND_Y - 40; c.state = 1; } }
+      else { c.vy = -0.4f; if (c.y < 5) { c.y = 5; c.state = 0; } }
       c.x += sin(c.animPhase * 0.3f) * 0.2f;
       if (random(200) == 0) spawnBubble(c.x, c.y - 10);
     }
     if (c.type == SEAHORSE) {
-      if (c.y < 20) c.vy = 0.15f;
-      if (c.y > SAND_Y - 30) c.vy = -0.2f;
-      c.x += sin(c.animPhase * 0.2f) * 0.1f;
+      if (c.y < 20) { c.y = 20; c.vy = max(0.05f, fabs(c.vy)); }
+      if (c.y > SAND_Y - 30) { c.y = SAND_Y - 30; c.vy = -max(0.05f, fabs(c.vy)); }
     }
-    bool off = false;
-    if (c.type == CRAB || c.type == FISH_SMALL || c.type == FISH_MED || c.type == FISH_LARGE)
-      off = (c.x < -50 || c.x > SW + 50);
-    else if (c.type == JELLYFISH) off = (c.y > SH + 30 || c.y < -40);
-    else if (c.type == SEAHORSE) off = (c.y < -30 || c.y > SH + 30);
-    if (off) c.active = false;
+    if (c.type == CRAB) {
+      c.y = SAND_Y - 2;
+    }
+    // Boundary bouncing: flip direction at screen edges instead of deactivating
+    if (c.type == FISH_SMALL || c.type == FISH_MED || c.type == FISH_LARGE || c.type == CRAB) {
+      if (c.x < 5 && c.vx < 0) { c.vx = -c.vx; c.dir = 1; }
+      else if (c.x > SW - 5 && c.vx > 0) { c.vx = -c.vx; c.dir = -1; }
+    }
+    if (c.type == JELLYFISH) {
+      if (c.x < 10) c.vx = 0.15f;
+      else if (c.x > SW - 10) c.vx = -0.15f;
+    }
+    if (c.type == SEAHORSE) {
+      if (c.x < 10 && c.vx < 0) { c.vx = -c.vx; c.dir = 1; }
+      else if (c.x > SW - 10 && c.vx > 0) { c.vx = -c.vx; c.dir = -1; }
+    }
   }
 }
 
@@ -791,26 +947,19 @@ void drawCreatures() {
   }
 }
 
-// --- SPAWNER ---
-void trySpawnCreature() {
-  int active = 0, freeSlot = -1;
-  for (int i = 0; i < MAX_CREATURES; i++) {
-    if (creatures[i].active) active++;
-    else if (freeSlot < 0) freeSlot = i;
-  }
-  if (freeSlot < 0 || active >= 8) return;
-  unsigned long now = millis();
-  if (now - lastSpawn < 2000) return;
-  lastSpawn = now;
-  int r = random(100);
-  CreatureType t;
-  if (r < 35)      t = FISH_SMALL;
-  else if (r < 60) t = FISH_MED;
-  else if (r < 72) t = FISH_LARGE;
-  else if (r < 82) t = JELLYFISH;
-  else if (r < 92) t = CRAB;
-  else              t = SEAHORSE;
-  spawnCreature(freeSlot, t);
+// --- SPAWN ALL ---
+void spawnAllCreatures() {
+  for (int i = 0; i < MAX_CREATURES; i++) creatures[i].active = false;
+  // 3 small fish, 2 medium, 1 large, 1 jellyfish, 1 crab, 1 seahorse = 9
+  spawnCreature(0, FISH_SMALL);
+  spawnCreature(1, FISH_SMALL);
+  spawnCreature(2, FISH_SMALL);
+  spawnCreature(3, FISH_MED);
+  spawnCreature(4, FISH_MED);
+  spawnCreature(5, FISH_LARGE);
+  spawnCreature(6, JELLYFISH);
+  spawnCreature(7, CRAB);
+  spawnCreature(8, SEAHORSE);
 }
 
 // --- SETUP & LOOP ---
@@ -836,13 +985,11 @@ void setup() {
   for (int i = 0; i < MAX_BUBBLES; i++) bubbles[i].active = false;
   for (int i = 0; i < MAX_CREATURES; i++) creatures[i].active = false;
 
+  assignPlantPositions();
   initWeeds();
   initKelp();
-  spawnCreature(0, FISH_SMALL);
-  spawnCreature(1, FISH_MED);
-  spawnCreature(2, FISH_SMALL);
-  spawnCreature(3, JELLYFISH);
-  spawnCreature(4, CRAB);
+  initCoral();
+  spawnAllCreatures();
 
   lastFrame = millis();
 }
@@ -857,6 +1004,11 @@ void loop() {
     delay(50);
     if (digitalRead(BUTTON_PIN) == LOW) {
       themeIndex = (themeIndex + 1) % NUM_THEMES;
+      assignPlantPositions();
+      initWeeds();
+      initKelp();
+      initCoral();
+      spawnAllCreatures();
       Serial.printf("Theme: %d\n", themeIndex);
     }
   }
@@ -876,9 +1028,9 @@ void loop() {
   // Update simulation once
   updateWeeds(dt);
   updateKelp(dt);
+  updateCoral(dt);
   updateBubbles(dt);
   updateCreatures(dt);
-  trySpawnCreature();
 
   // Render 3 strips, push each immediately — flicker-free
   for (int s = 0; s < NUM_STRIPS; s++) {
@@ -886,6 +1038,7 @@ void loop() {
     drawBackground();
     drawWeeds();
     drawKelp();
+    drawCoral();
     drawCreatures();
     drawBubbles();
     fb.pushSprite(0, stripY);
