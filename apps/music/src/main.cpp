@@ -341,9 +341,11 @@ bool fetchArtwork() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting music app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
+
+  ui.init();
+  ui.clear();
 
   preferences.begin("app", true);
   serverUrl = preferences.getString("server_url");
@@ -362,9 +364,6 @@ void setup() {
   TJpgDec.setJpgScale(1);
   TJpgDec.setSwapBytes(true);
   TJpgDec.setCallback(tft_output);
-
-  ui.init();
-  ui.clear();
 
   // Show loading screen
   ui.tft.fillScreen(TFT_BLACK);

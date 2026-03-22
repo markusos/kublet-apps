@@ -614,12 +614,13 @@ void drawScreen() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting weather app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
   ui.init();
+  ui.clear();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   initColors();
   drawTarget = &ui.tft;

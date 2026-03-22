@@ -130,13 +130,14 @@ void stopTimer() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting pomodoro app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
+  ui.init();
+  ui.clear();
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  ui.init();
   ui.tft.fillScreen(CLR_BG);
 
   // Draw initial stopped state

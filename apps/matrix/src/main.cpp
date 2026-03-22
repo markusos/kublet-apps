@@ -61,14 +61,15 @@ void initColumn(int col) {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting matrix app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  randomSeed(analogRead(34) ^ millis());
-
   ui.init();
+  ui.clear();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  randomSeed(esp_random());
+
   ui.tft.fillScreen(TFT_BLACK);
   ui.tft.setTextFont(1);
 

@@ -391,13 +391,14 @@ void drawResultScreen() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting speed test app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
+  ui.init();
+  ui.clear();
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  ui.init();
   ui.tft.fillScreen(CLR_BG);
   drawCentered("SPEEDTEST", Arial_24_Bold, CLR_GREEN, 80);
   ui.tft.drawFastHLine(30, 108, 180, CLR_DIM);

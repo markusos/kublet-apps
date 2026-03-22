@@ -967,12 +967,13 @@ void spawnAllCreatures() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting aquarium app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
   ui.init();
+  ui.clear();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   // 240x80 strip at 16-bit = 38,400 bytes — fits comfortably
   fb.setColorDepth(16);

@@ -656,16 +656,17 @@ void startGeneration() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting maze app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
+  ui.init();
+  ui.clear();
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  ui.init();
   ui.tft.fillScreen(CLR_BG);
 
-  randomSeed(analogRead(0) ^ millis());
+  randomSeed(esp_random());
 
   startGeneration();
 }

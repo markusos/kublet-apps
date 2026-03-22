@@ -1,5 +1,6 @@
 """Build firmware and upload over WiFi OTA."""
 
+import hashlib
 import http.client
 import subprocess
 import sys
@@ -73,6 +74,10 @@ def ota_send(ip: str, firmware: Path, app_name: str) -> None:
     boundary = "----KubletOTA"
     firmware_data = firmware.read_bytes()
 
+    # Compute MD5 hash for firmware integrity verification
+    md5_hash = hashlib.md5(firmware_data).hexdigest()
+    print(f"  🔒 Firmware MD5: {md5_hash}")
+
     header_part = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="filedata"; filename="firmware.bin"\r\n'
@@ -88,6 +93,7 @@ def ota_send(ip: str, firmware: Path, app_name: str) -> None:
         conn.putrequest("POST", "/update")
         conn.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
         conn.putheader("Content-Length", str(content_length))
+        conn.putheader("X-Firmware-MD5", md5_hash)
         conn.endheaders()
 
         # Send multipart header

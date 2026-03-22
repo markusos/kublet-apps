@@ -107,13 +107,14 @@ void updateDisplay() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting clock app");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
+  ui.init();
+  ui.clear();
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  ui.init();
   ui.tft.fillScreen(TFT_BLACK);
   drawCentered("Syncing...", Arial_14_Bold, 0x7BEF, 110);
 

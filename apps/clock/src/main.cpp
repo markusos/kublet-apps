@@ -172,15 +172,16 @@ bool syncNtp() {
 void setup() {
   Serial.begin(460800);
   Serial.println("Starting analog clock");
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
+
+  ui.init();
+  ui.clear();
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   buildTrigTables();
 
-  ui.init();
   ui.tft.fillScreen(CLR_BG);
 
   configTzTime(TIMEZONE, "pool.ntp.org", "time.google.com");

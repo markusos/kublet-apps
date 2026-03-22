@@ -421,6 +421,9 @@ void setup() {
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
+  ui.init();
+  ui.clear();
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   // Sync NTP time — US Eastern (UTC-5, DST UTC-4)
@@ -438,9 +441,6 @@ void setup() {
 
   // Initialize all ticker data
   memset(tickers, 0, sizeof(tickers));
-
-  ui.init();
-  ui.clear();
 }
 
 void loop() {

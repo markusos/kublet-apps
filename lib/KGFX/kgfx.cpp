@@ -7,7 +7,10 @@
 ** Description:             Initializes GFX library
 ***************************************************************************************/
 void KGFX::init() {
-  tft.begin();
+  delay(100);  // let SPI bus stabilize after reboot
+  t.begin();   // initialize the raw TFT_eSPI (proven reliable, unlike TFT_eSPI_ext)
+  t.setRotation(0);
+  t.fillScreen(TFT_BLACK);
   palette[0] = TFT_BLACK;
 }
 
@@ -17,7 +20,6 @@ void KGFX::init() {
 ***************************************************************************************/
 void KGFX::clear() {
   t.fillScreen(TFT_BLACK);
-  tft.fillScreen(TFT_BLACK);
 }
 
 /***************************************************************************************
@@ -25,7 +27,7 @@ void KGFX::clear() {
 ** Description:             Creates sprite with given width and height
 ***************************************************************************************/
 TFT_eSprite KGFX::createSprite(int width, int height) {
-  TFT_eSprite spr = TFT_eSprite(&tft);
+  TFT_eSprite spr = TFT_eSprite(&t);
   spr.setColorDepth(16);
   spr.createSprite(width, height);
   return spr;
@@ -36,7 +38,7 @@ TFT_eSprite KGFX::createSprite(int width, int height) {
 ** Description:             Creates sprite with given width and height
 ***************************************************************************************/
 TFT_eSprite KGFX::createSpriteLarge(int width, int height) {
-  TFT_eSprite spr = TFT_eSprite(&tft);
+  TFT_eSprite spr = TFT_eSprite(&t);
   // On an ESP32 the workspace RAM is more limited than the datasheet implies so a
   // 16-bit colour Sprite is limited to about 200x200 pixels (~80Kbytes), an 8-bit
   // sprite to 320x240 pixels (~76kbytes)
@@ -60,6 +62,7 @@ void KGFX::drawText(TFT_eSprite &spr, const char *txt, const tftfont_t &f, int c
   tft.print(txt);
 
   spr.pushSprite(x, y);
+  tft.TTFdestination(&tft);  // restore to direct display
 }
 
 /***************************************************************************************
@@ -74,7 +77,7 @@ void KGFX::drawTextCenter(TFT_eSprite &spr, const char *txt, const tftfont_t &f,
   tft.setTTFFont(f);
   tft.setTextColor(color, TFT_BLACK);
 
-  int w = tft.TTFtextWidth(txt); 
+  int w = tft.TTFtextWidth(txt);
   int x1 = (spr.width() - w)/2; // center text in sprite
   int x2 = (tft.width() - spr.width())/2; // center sprite on screen
 
@@ -82,6 +85,7 @@ void KGFX::drawTextCenter(TFT_eSprite &spr, const char *txt, const tftfont_t &f,
   tft.print(txt);
 
   spr.pushSprite(x2, y);
+  tft.TTFdestination(&tft);  // restore to direct display
 }
 
 /***************************************************************************************
@@ -89,6 +93,7 @@ void KGFX::drawTextCenter(TFT_eSprite &spr, const char *txt, const tftfont_t &f,
 ** Description:             Draws text to screen
 ***************************************************************************************/
 void KGFX::drawText(const char *txt, const tftfont_t &f, int color, int x, int y) {
+  tft.TTFdestination(&tft);
   tft.setTTFFont(f);
   tft.setTextColor(color, TFT_BLACK);
   tft.setCursor(x,y);
@@ -101,6 +106,7 @@ void KGFX::drawText(const char *txt, const tftfont_t &f, int color, int x, int y
  ***************************************************************************************/
 
 void KGFX::drawTextCenter(const char *txt, const tftfont_t &f, int color, int y) {
+  tft.TTFdestination(&tft);
   tft.setTTFFont(f);
   tft.setTextColor(color, TFT_BLACK);
   int x = tft.width() / 2 - tft.TTFtextWidth(txt) / 2;
@@ -147,7 +153,7 @@ void KGFX::deleteChartSprite() {
 ** Description:             Draws default chart size to sprite
 ***************************************************************************************/
 void KGFX::drawChart(std::vector<float> arr, int color, int y, int spacing, int height) {
-  tft.TTFdestination(&chartSpr);
+  tft.TTFdestination(&chartSpr);  // render to chart sprite
   chartSpr.fillSprite(TFT_BLACK);
 
   createPalette(color);
@@ -172,6 +178,7 @@ void KGFX::drawChart(std::vector<float> arr, int color, int y, int spacing, int 
   }
 
   chartSpr.pushSprite(0, y);
+  tft.TTFdestination(&tft);  // restore to direct display
 }
 
 /***************************************************************************************
@@ -238,6 +245,7 @@ void KGFX::drawVGradient(int x, int y, int y1) {
 ***************************************************************************************/
 void KGFX::drawCentered(const char* text, const tftfont_t& font, uint16_t color, int y,
                          uint16_t bg, int clearH) {
+  tft.TTFdestination(&tft);
   tft.setTTFFont(font);
   if (clearH > 0) tft.fillRect(0, y - 2, 240, clearH, bg);
   tft.setTextColor(color, bg);

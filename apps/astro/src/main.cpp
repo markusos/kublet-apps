@@ -261,12 +261,13 @@ void advanceImage() {
 // --- SETUP ---
 void setup() {
   Serial.begin(460800);
-
   otaserver.connectWiFi(); // DO NOT EDIT.
   otaserver.run();         // DO NOT EDIT
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
   ui.init();
+  ui.clear();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   // Allocate JPEG buffer
   jpegBuf = (uint8_t*)malloc(JPEG_BUF_SIZE);

@@ -23,6 +23,10 @@ if (!MDNS.begin("esp32")) { //http://esp32.local
     server.send(200, "text/plain", "OK");
   });
 
+  /* Collect custom header for firmware MD5 verification */
+  const char* headerKeys[] = {"X-Firmware-MD5"};
+  server.collectHeaders(headerKeys, 1);
+
   /*handling uploading firmware file */
   server.on("/update", HTTP_POST, []() {
     server.sendHeader("Connection", "close");
@@ -35,6 +39,14 @@ if (!MDNS.begin("esp32")) { //http://esp32.local
       if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
         Update.printError(Serial);
       }
+      // Set expected MD5 if provided by deploy tool
+      if (server.hasHeader("X-Firmware-MD5")) {
+        String md5 = server.header("X-Firmware-MD5");
+        if (md5.length() == 32) {
+          Update.setMD5(md5.c_str());
+          Serial.printf("OTA: MD5 verification enabled: %s\n", md5.c_str());
+        }
+      }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
       /* flashing firmware to ESP*/
       if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
@@ -46,6 +58,7 @@ if (!MDNS.begin("esp32")) { //http://esp32.local
         _otaPendingRestart = true;
         _otaRestartRequestedAt = millis();
       } else {
+        Serial.println("OTA: Update FAILED (possible MD5 mismatch or write error)");
         Update.printError(Serial);
       }
     }

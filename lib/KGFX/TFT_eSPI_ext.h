@@ -32,7 +32,14 @@ public:
   TFT_eSPI* _dest;
   bool _useTFT = true;
 
-  // TFT_eSPI_ext(TFT_eSPI *tft)
+  // Default constructor — uses self as TTF destination
+  TFT_eSPI_ext()
+  {
+    _dest = this;
+    _useTFT = true;
+  }
+
+  // Pointer constructor (legacy — prefer default)
   TFT_eSPI_ext(TFT_eSPI *tft)
   {
     _dest = tft;
@@ -72,6 +79,9 @@ public:
     }
     else
     {
+      // Call base class directly — _dest->write(c) would infinitely
+      // recurse when _dest == this because write() is virtual.
+      if (_dest == this) return TFT_eSPI::write(c);
       return _dest->write(c);
     }
   }
