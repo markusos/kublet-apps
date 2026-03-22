@@ -120,7 +120,7 @@ unsigned long lastAnimFrame = 0;
 const unsigned long ANIM_INTERVAL = 120; // ~8 fps for smooth animation
 
 // Sprite for flicker-free icon animation (120x110 @ 16-bit = 26,400 bytes)
-#define ICON_SPR_W 120
+#define ICON_SPR_W 90
 #define ICON_SPR_H 100
 #define ICON_SPR_X 10
 #define ICON_SPR_Y 35
@@ -359,19 +359,25 @@ void drawLargeIcon(int cx, int cy, IconType icon, float anim) {
       drawLargeSun(cx, cy, anim);
       break;
 
-    case ICON_MOSTLY_CLEAR:
-      drawLargeSun(cx - 12, cy - 12, anim);
+    case ICON_MOSTLY_CLEAR: {
+      // Center correction: visual center was ~10px left, 12px up
+      int mx = cx + 10, my = cy + 12;
+      drawLargeSun(mx - 12, my - 12, anim);
       // Small cloud bottom-right (pixel coords)
-      drawTarget->fillCircle(cx + 10, cy + 8, 8, CLR_CLOUD);
-      drawTarget->fillRect(cx - 2, cy + 10, 28, 6, CLR_CLOUD);
-      drawTarget->fillRect(cx - 4, cy + 14, 30, 4, mid);
-      drawTarget->fillRect(cx - 2, cy + 18, 26, 3, CLR_CLOUD_DK);
+      drawTarget->fillCircle(mx + 10, my + 8, 8, CLR_CLOUD);
+      drawTarget->fillRect(mx - 2, my + 10, 28, 6, CLR_CLOUD);
+      drawTarget->fillRect(mx - 4, my + 14, 30, 4, mid);
+      drawTarget->fillRect(mx - 2, my + 18, 26, 3, CLR_CLOUD_DK);
       break;
+    }
 
-    case ICON_PARTLY_CLOUDY:
-      drawLargeSun(cx - 14, cy - 14, anim);
-      drawLargeCloud(cx + 5, cy + 5, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
+    case ICON_PARTLY_CLOUDY: {
+      // Center correction: visual center was ~7px left, 11px up
+      int px2 = cx + 7, py = cy + 11;
+      drawLargeSun(px2 - 14, py - 14, anim);
+      drawLargeCloud(px2 + 5, py + 5, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
       break;
+    }
 
     case ICON_CLOUDY: {
       int drift = (int)(sin(anim * 0.8f) * 5.0f);
@@ -383,47 +389,47 @@ void drawLargeIcon(int cx, int cy, IconType icon, float anim) {
     }
 
     case ICON_FOG:
-      drawLargeCloud(cx, cy - 10, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
-      drawLargeFog(cx, cy - 10, anim);
+      drawLargeCloud(cx, cy - 6, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
+      drawLargeFog(cx, cy - 6, anim);
       break;
 
     case ICON_DRIZZLE: {
-      drawLargeCloud(cx, cy - 8, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
+      drawLargeCloud(cx, cy - 4, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
       uint16_t dl = ui.tft.color565(140, 180, 255);
-      drawLargeRain(cx, cy - 8, 4, CLR_RAIN, dl, anim);
+      drawLargeRain(cx, cy - 4, 4, CLR_RAIN, dl, anim);
       break;
     }
 
     case ICON_RAIN: {
       uint16_t rc = ui.tft.color565(170, 170, 185);
       uint16_t rs = ui.tft.color565(130, 130, 145);
-      drawLargeCloud(cx, cy - 8, rc, rc, rs, CLR_CLOUD);
+      drawLargeCloud(cx, cy - 4, rc, rc, rs, CLR_CLOUD);
       uint16_t rl = ui.tft.color565(120, 170, 255);
-      drawLargeRain(cx, cy - 8, 8, CLR_RAIN, rl, anim);
+      drawLargeRain(cx, cy - 4, 8, CLR_RAIN, rl, anim);
       break;
     }
 
     case ICON_FREEZING: {
-      drawLargeCloud(cx, cy - 8, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
+      drawLargeCloud(cx, cy - 4, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
       uint16_t il = ui.tft.color565(180, 235, 255);
-      drawLargeRain(cx - 8, cy - 8, 4, CLR_ICE, il, anim);
-      drawLargeSnow(cx + 10, cy - 8, CLR_SNOW, CLR_SNOW_LT, anim);
+      drawLargeRain(cx - 8, cy - 4, 4, CLR_ICE, il, anim);
+      drawLargeSnow(cx + 10, cy - 4, CLR_SNOW, CLR_SNOW_LT, anim);
       break;
     }
 
     case ICON_SNOW:
-      drawLargeCloud(cx, cy - 8, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
-      drawLargeSnow(cx, cy - 8, CLR_SNOW, CLR_SNOW_LT, anim);
+      drawLargeCloud(cx, cy - 4, CLR_CLOUD, mid, CLR_CLOUD_DK, hi);
+      drawLargeSnow(cx, cy - 4, CLR_SNOW, CLR_SNOW_LT, anim);
       break;
 
     case ICON_THUNDER: {
       uint16_t sc = ui.tft.color565(110, 110, 125);
       uint16_t ss = ui.tft.color565(80, 80, 95);
       uint16_t sh = ui.tft.color565(140, 140, 155);
-      drawLargeCloud(cx, cy - 8, sc, sc, ss, sh);
-      drawLargeLightning(cx, cy - 8, anim);
+      drawLargeCloud(cx, cy - 4, sc, sc, ss, sh);
+      drawLargeLightning(cx, cy - 4, anim);
       uint16_t rl = ui.tft.color565(120, 170, 255);
-      drawLargeRain(cx, cy - 8, 5, CLR_RAIN, rl, anim);
+      drawLargeRain(cx, cy - 4, 5, CLR_RAIN, rl, anim);
       break;
     }
   }
@@ -539,10 +545,12 @@ void drawScreen() {
 
   // --- Current weather icon (large, left side, animated) ---
   IconType currentIcon = wmoToIcon(weather.currentCode);
-  drawLargeIcon(70, 80, currentIcon, animPhase);
+  // Icon vertical center
+  int iconCY = 85;
+  drawLargeIcon(55, iconCY, currentIcon, animPhase);
 
-  // --- Current temperature (right side of icon) ---
-  int textCX = 168;
+  // --- Current temperature (right side, vertically centered with icon) ---
+  int textCX = 170;
   char numStr[8];
   snprintf(numStr, sizeof(numStr), "%.0f", weather.currentTemp);
   ui.tft.setTTFFont(Arial_24_Bold);
@@ -551,11 +559,12 @@ void drawScreen() {
   int fW = ui.tft.TTFtextWidth("F");
   int totalW = numW + 10 + fW; // num + degree circle gap + F
   int tx = textCX - totalW / 2;
-  ui.tft.setCursor(tx, 60);
+  int tempY = iconCY - 20; // temp above center
+  ui.tft.setCursor(tx, tempY);
   ui.tft.print(numStr);
   // Draw degree symbol as small circle
-  ui.tft.drawCircle(tx + numW + 4, 63, 3, TFT_WHITE);
-  ui.tft.setCursor(tx + numW + 10, 60);
+  ui.tft.drawCircle(tx + numW + 4, tempY + 3, 3, TFT_WHITE);
+  ui.tft.setCursor(tx + numW + 10, tempY);
   ui.tft.print("F");
 
   // --- Current condition label ---
@@ -563,7 +572,7 @@ void drawScreen() {
   ui.tft.setTTFFont(Arial_12);
   ui.tft.setTextColor(ui.tft.color565(160, 160, 180), CLR_BG);
   int lw = ui.tft.TTFtextWidth(label);
-  ui.tft.setCursor(textCX - lw / 2, 95);
+  ui.tft.setCursor(textCX - lw / 2, iconCY + 10); // label below center
   ui.tft.print(label);
 
   // --- Divider line ---
@@ -677,7 +686,7 @@ void loop() {
     iconSpr.fillSprite(CLR_BG);
     IconType currentIcon = wmoToIcon(weather.currentCode);
     // Draw at sprite-local coords (icon center relative to sprite)
-    drawLargeIcon(70 - ICON_SPR_X, 80 - ICON_SPR_Y, currentIcon, animPhase);
+    drawLargeIcon(55 - ICON_SPR_X, 85 - ICON_SPR_Y, currentIcon, animPhase);
     iconSpr.pushSprite(ICON_SPR_X, ICON_SPR_Y);
     drawTarget = &ui.tft;
   }
