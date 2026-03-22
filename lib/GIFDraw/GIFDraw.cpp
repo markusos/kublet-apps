@@ -2,16 +2,17 @@
 
 #include "GIFDraw.h"
 #include <cstdint>
-#include <AnimatedGIF.h>
-#include <TFT_eSPI.h>
-
-#include "globals.h"
 
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 240
 #define BUFFER_SIZE 240
 
-uint16_t usTemp[BUFFER_SIZE];
+static TFT_eSPI *_tft = nullptr;
+static uint16_t usTemp[BUFFER_SIZE];
+
+void GIFDrawSetTFT(TFT_eSPI *display) {
+  _tft = display;
+}
 
 // Draw a line of image directly on the LCD
 void GIFDraw(GIFDRAW *pDraw)
@@ -19,6 +20,8 @@ void GIFDraw(GIFDRAW *pDraw)
   uint8_t *s;
   uint16_t *d, *usPalette;
   int x, y, iWidth;
+
+  if (!_tft) return;
 
   // Display bounds check and cropping
   iWidth = pDraw->iWidth;
@@ -47,6 +50,6 @@ void GIFDraw(GIFDRAW *pDraw)
   for (x = 0; x < iWidth; x++)
     *d++ = usPalette[*s++];
 
-  tft.setAddrWindow(pDraw->iX, y, iWidth, 1);
-  tft.pushPixels(usTemp, iWidth);
+  _tft->setAddrWindow(pDraw->iX, y, iWidth, 1);
+  _tft->pushPixels(usTemp, iWidth);
 }

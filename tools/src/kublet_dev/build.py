@@ -3,11 +3,13 @@
 import http.client
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from kublet_dev.config import USER_SETUP_H, find_pio
+from kublet_dev.network import check_ota_endpoint
 
 
 def write_user_setup(app_dir: Path) -> None:
@@ -40,6 +42,18 @@ def build_firmware(app_dir: Path) -> Path:
     size_kb = firmware.stat().st_size / 1024
     print(f"  ✓ Build succeeded ({size_kb:.0f} KB)")
     return firmware
+
+
+def _verify_reboot(ip: str) -> None:
+    """Check that the device rebooted and came back online after OTA."""
+    print("  ⏳ Verifying reboot...", end="", flush=True)
+    time.sleep(5)
+    for _ in range(5):
+        if check_ota_endpoint(ip):
+            print(f"\r  ✓ Device back online{' ':30}")
+            return
+        time.sleep(3)
+    print(f"\r  ⚠ Device not responding — may need power cycle{' ':10}")
 
 
 def _print_progress(sent: int, total: int) -> None:
@@ -109,3 +123,5 @@ def ota_send(ip: str, firmware: Path, app_name: str) -> None:
         print()
         print(f"  ✗ Upload failed: {e}")
         sys.exit(1)
+
+    _verify_reboot(ip)

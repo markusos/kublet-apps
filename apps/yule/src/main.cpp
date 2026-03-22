@@ -4,8 +4,7 @@
 #include <TFT_eSPI.h>
 
 #include "yule.h"
-#include "globals.h"
-#include "GIFDraw.h"
+#include <GIFDraw.h>
 
 #define GIF_IMAGE yule
 
@@ -30,6 +29,7 @@ void setup()
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 
+  GIFDrawSetTFT(&tft);
   gif.begin(BIG_ENDIAN_PIXELS);
 }
 

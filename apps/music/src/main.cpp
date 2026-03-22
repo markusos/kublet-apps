@@ -25,6 +25,7 @@ char trackAlbum[128]  = "";
 bool trackPlaying     = false;
 int trackElapsed      = 0;
 int trackDuration     = 0;
+bool hasTrackData     = false;  // true once we've received valid metadata
 
 // Previous track identity for detecting song changes
 char prevTitle[128]  = "";
@@ -217,8 +218,18 @@ void updateProgressBar() {
   }
 }
 
+// Draw idle screen when no music server or no track data
+void drawIdleView() {
+  ui.tft.fillScreen(TFT_BLACK);
+  ui.drawCentered("No music playing", Arial_14_Bold, 0x7BEF, 110);
+}
+
 // Draw current view
 void drawUI() {
+  if (!hasTrackData) {
+    drawIdleView();
+    return;
+  }
   if (currentView == VIEW_ARTWORK) {
     drawArtworkView();
   } else {
@@ -269,6 +280,7 @@ bool fetchMetadata() {
   trackElapsed  = doc["elapsed"]  | 0;
   trackDuration = doc["duration"] | 0;
 
+  hasTrackData = true;
   Serial.printf("Track: %s - %s [%s] %s %d/%d\n",
                 trackArtist, trackTitle, trackAlbum,
                 trackPlaying ? "playing" : "paused",
@@ -391,6 +403,21 @@ void loop() {
           updateProgressBar(); // lightweight update, no JPEG redecode
         } else {
           drawUI(); // update elapsed time in info view
+        }
+      } else if (hasTrackData) {
+        // Server went away — clear stale track and show idle screen
+        hasTrackData = false;
+        hasArtwork = false;
+        trackTitle[0] = '\0';
+        trackArtist[0] = '\0';
+        trackAlbum[0] = '\0';
+        drawUI();
+      } else if (lastMetadataFetch != 0) {
+        // First draw — replace "Connecting..." with idle screen
+        static bool shownIdle = false;
+        if (!shownIdle) {
+          shownIdle = true;
+          drawUI();
         }
       }
     }
