@@ -6,10 +6,6 @@ A collection of app ideas for the Kublet 240x240 smart display. Ideas are tagged
 
 ## Productivity & Info
 
-### Pomodoro Timer
-Countdown timer with work/break cycles. Button starts/pauses/skips. Show a big countdown with a progress ring, change color for work (red) vs break (green). No server needed.
-`standalone` `easy`
-
 ### Calendar / Next Meeting
 Show your next upcoming meeting with title, time, and a countdown. Color-code by urgency (green > 30 min, yellow < 30 min, red < 5 min).
 `server` `medium`
@@ -30,57 +26,69 @@ Show unread notification count with repo name and type (issue, PR, review). Requ
 Monitor CI/CD pipeline status (GitHub Actions, GitLab CI). Show green/red/yellow circle with repo name and last build time. Similar pattern to the icinga app.
 `server` `medium`
 
+### Countdown Timer
+Countdown to a specific date (vacation, launch day, birthday). Big number display with label. Configure date via NVS.
+`standalone` `easy`
+
 ---
 
 ## Weather & Environment
 
-### Weather Display
-Current temperature, condition icon (sun/cloud/rain drawn with shapes), and high/low. Use OpenWeatherMap free tier. Button toggles between today and tomorrow.
-`standalone` `medium`
-
 ### Air Quality Index
-Show AQI value as a big number with color-coded background (green/yellow/orange/red/purple). Good for desk placement near a window.
-`server` `easy`
+Show AQI value as a big number with color-coded background (green/yellow/orange/red/purple). Use OpenAQ or AirNow API.
+`standalone` `easy`
 
 ### Sunrise / Sunset Clock
-Display today's sunrise and sunset times with a sun arc visualization showing current position in the day. Looks great with orange/blue gradients.
+Display today's sunrise and sunset times with a sun arc visualization showing current position in the day. Orange/blue gradients.
 `standalone` `medium`
+
+### Phase of Moon
+Display the current moon phase as a detailed pixel art lunar disc with phase name, illumination percentage, and next full/new moon date.
+`standalone` `medium`
+
+### UV Index
+Show current UV index as a large number with color-coded severity (green/yellow/orange/red/violet). Include a recommendation (hat, sunscreen, stay inside).
+`standalone` `easy`
 
 ---
 
 ## Fun & Visual
 
-### Matrix Rain
-Classic falling green characters animation. Pure eye candy, no data needed. Button could change color or speed.
-`standalone` `easy`
-
 ### Pixel Art Gallery
-Cycle through hand-drawn or procedurally generated pixel art. 240x240 is perfect for pixel art. Button advances to next piece.
+Cycle through hand-drawn or procedurally generated pixel art scenes. 240x240 is perfect for pixel art. Button advances to next piece.
 `standalone` `easy`
 
 ### Game of Life
 Conway's Game of Life running on a grid. Button randomizes the board. Mesmerizing to watch on a desk.
 `standalone` `easy`
 
-### Lava Lamp
-Procedural lava lamp simulation using metaballs or simplex noise. Smooth, colorful, ambient display.
-`standalone` `medium`
-
-### Maze Generator
-Generate and animate maze creation (recursive backtracker looks great). Button generates a new maze. Could also animate solving it.
+### Starfield
+Classic starfield warp speed animation. Stars fly outward from center with trailing streaks. Button changes speed/color.
 `standalone` `easy`
 
-### Aquarium
-Animated fish swimming across the screen with bubbles. Simple sprite-based animation. Very desk-friendly.
+### Nyan Cat
+Animated Nyan Cat flying across the screen with a rainbow trail. Pure nostalgia.
+`standalone` `easy`
+
+### DVD Screensaver
+The classic bouncing DVD logo that changes color when it hits a corner. Surprisingly satisfying to watch.
+`standalone` `easy`
+
+### Fireworks
+Procedural fireworks bursting with particle effects. Multiple colors, random launch positions, trailing sparks.
+`standalone` `medium`
+
+### Cellular Automata
+Visualize various cellular automata rules (Rule 30, Rule 110, etc.) generating mesmerizing patterns. Button cycles rules.
+`standalone` `easy`
+
+### Snake
+Classic snake game that plays itself (AI-controlled), or let the button change direction. Show score.
 `standalone` `medium`
 
 ---
 
 ## Data & Dashboards
-
-### Crypto Price Tracker
-Similar to the stock app but for BTC/ETH. Show price, 24h change, and a mini sparkline. Many free crypto APIs available.
-`server` `medium`
 
 ### Server Resource Monitor
 Show CPU, memory, and disk usage of a server as bar charts or gauges. Server-side script reports stats via HTTP.
@@ -94,17 +102,9 @@ Display total queries, blocked percentage, and top blocked domain from a Pi-hole
 Display the state of a Home Assistant entity (temperature sensor, door status, light state). HA has a REST API.
 `standalone` `medium`
 
-### Network Speed Test
-Run periodic speed tests from the server and display download/upload speeds. Good "is my internet working" glanceable display.
-`server` `medium`
-
 ---
 
 ## Time & Clocks
-
-### Analog Clock
-Classic analog clock face with hour/minute/second hands. Clean, always-useful desk display. Draw with arcs and lines.
-`standalone` `easy`
 
 ### World Clock
 Show 2-3 timezone clocks at once (e.g., your city + a teammate's city). Useful for distributed teams.
@@ -114,16 +114,20 @@ Show 2-3 timezone clocks at once (e.g., your city + a teammate's city). Useful f
 Display current time in binary. Nerdy desk piece. Columns of lit/unlit circles for hours, minutes, seconds.
 `standalone` `easy`
 
-### Countdown
-Countdown to a specific date (vacation, launch day, birthday). Big number display with label. Configure date via NVS.
+### Fuzzy Clock
+Display time as natural language ("quarter past three", "almost midnight"). Minimalist and charming.
 `standalone` `easy`
+
+### Tetris Clock
+Display time digits made of falling Tetris pieces. Animated transitions when digits change.
+`standalone` `medium`
 
 ---
 
 ## Interactive
 
 ### Dice Roller
-Roll dice on button press with a satisfying animation. Show result as dot pattern (like a real die face). Support d6, d20 etc via long-press cycling.
+Roll dice on button press with a satisfying tumbling animation. Show result as dot pattern (like a real die face). Support d6, d20 etc via long-press cycling.
 `standalone` `easy`
 
 ### Decision Maker
@@ -140,12 +144,56 @@ Classic memory game with colored quadrants. Button confirms sequence. Gets harde
 
 ---
 
-## Music & Audio (visual only)
+## Sports & Fitness
 
-### Spotify Now Playing
-Show currently playing track name, artist, and a progress bar. Requires Spotify API auth via server.
+### Live Sports Scores
+Show live scores for NBA, NFL, MLB, or EPL. Auto-update during game time. Use ESPN or similar free API.
+`standalone` `hard`
+
+### Strava Stats
+Display recent activity stats — distance, pace, elevation. Show a weekly summary with a mini activity chart.
 `server` `medium`
 
-### Album Art Display
-Fetch and display album art for the currently playing track. 240x240 is a perfect square for album covers.
-`server` `hard`
+### Formula 1 Standings
+Show current F1 driver/constructor standings. Update after each race weekend. Button toggles drivers vs constructors.
+`standalone` `medium`
+
+---
+
+## Space & Science
+
+### ISS Tracker
+Show the current position of the International Space Station on a mini world map. Display next visible pass for your location.
+`standalone` `medium`
+
+### Planetarium
+Show tonight's visible planets and constellations based on location and time. Animated star twinkle.
+`standalone` `hard`
+
+---
+
+## Transit & Travel
+
+### Flight Tracker
+Show nearby flights overhead using ADS-B data or FlightAware API. Display airline, altitude, destination.
+`standalone` `hard`
+
+### Transit Departures
+Show next departures from your local transit stop (bus, subway, train). Many cities have open GTFS APIs.
+`standalone` `medium`
+
+---
+
+## Social & Communication
+
+### Duolingo Streak
+Display your current Duolingo streak count with the owl mascot in pixel art. Motivational desk reminder.
+`standalone` `medium`
+
+### Reddit Top Post
+Show the top post from a configured subreddit with title, score, and comment count. Button cycles subreddits.
+`standalone` `medium`
+
+### Twitch Live
+Show if a configured streamer is live with viewer count and stream title. Twitch API is free.
+`standalone` `medium`
