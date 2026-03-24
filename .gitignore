@@ -10,5 +10,8 @@ apps/*/.gitignore
 __pycache__/
 tools/.env
 tools/.devices.yml
+
 tools/nvs_wifi.bin
 tools/nvs_wifi.csv
+
+tools/src/emulate/build/
