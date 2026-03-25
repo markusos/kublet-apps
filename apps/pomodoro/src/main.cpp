@@ -70,7 +70,9 @@ void advanceGray(int prevDeg, int newDeg) {
 void drawCentered(const char* text, const tftfont_t& font, uint16_t color, int y, int ySpan = 0) {
   ui.tft.setTTFFont(font);
   if (ySpan > 0) ui.tft.fillRect(CX - 70, y - 2, 140, ySpan, CLR_BG);
-  ui.tft.setTextColor(color, CLR_BG);
+  // Use same fg/bg to prevent TTF renderer from drawing its own background
+  // fills (which extend beyond our fillRect and cause artifacts)
+  ui.tft.setTextColor(color, color);
   int w = ui.tft.TTFtextWidth(text);
   ui.tft.setCursor((240 - w) / 2, y);
   ui.tft.print(text);
@@ -79,7 +81,7 @@ void drawCentered(const char* text, const tftfont_t& font, uint16_t color, int y
 void drawMinutes(int minutesLeft) {
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", minutesLeft);
-  drawCentered(buf, Arial_48_Bold, CLR_TEXT, 95, 48);
+  drawCentered(buf, Arial_48_Bold, CLR_TEXT, 95, 52);
 }
 
 void drawLabel(TimerState st) {

@@ -42,7 +42,7 @@ TickerData tickers[NUM_TICKERS];
 bool marketOpen = false;
 
 // Layout constants
-#define CHART_X      20
+#define CHART_X      15
 #define CHART_Y      38
 #define CHART_W      210
 #define CHART_H      168
@@ -271,11 +271,19 @@ void fetchTickerData(int idx) {
   encoded[ei] = '\0';
 
   HTTPClient http;
-  char url[128];
+  char url[192];
+  // Use explicit period1/period2 (last 24h) instead of range=1d
+  // This ensures crypto gets a full 24h rolling window, not just since UTC midnight
+  unsigned long now = (unsigned long)(millis() / 1000) + 1774396800UL; // approx epoch
+  // Use NTP time if available, otherwise fall back to compile-time estimate
+  time_t epoch;
+  time(&epoch);
+  if (epoch > 1700000000) now = (unsigned long)epoch;
+  unsigned long period1 = now - 86400;
   snprintf(url, sizeof(url),
            "https://query1.finance.yahoo.com/v8/finance/chart/%s"
-           "?interval=5m&range=1d&includePrePost=false",
-           encoded);
+           "?interval=5m&period1=%lu&period2=%lu&includePrePost=false",
+           encoded, period1, now);
 
   http.begin(secureClient, url);
   http.addHeader("User-Agent", "Mozilla/5.0");
@@ -300,6 +308,7 @@ void fetchTickerData(int idx) {
   JsonDocument filter;
   filter["chart"]["result"][0]["meta"]["regularMarketPrice"] = true;
   filter["chart"]["result"][0]["meta"]["chartPreviousClose"] = true;
+  filter["chart"]["result"][0]["meta"]["instrumentType"] = true;
   filter["chart"]["result"][0]["timestamp"] = true;
   filter["chart"]["result"][0]["indicators"]["quote"][0]["close"] = true;
   filter["chart"]["error"] = true;
@@ -336,8 +345,9 @@ void fetchTickerData(int idx) {
   td.lastPrice = result["meta"]["regularMarketPrice"] | openPrice;
   td.pctChange = (td.prevClose > 0) ? (td.lastPrice - td.prevClose) / td.prevClose * 100.0f : 0.0f;
 
-  // Detect crypto (trades 24/7, Yahoo returns >100 points for 1d)
-  td.isCrypto = (timestamps.size() > 100);
+  // Detect crypto by instrument type (trades 24/7, no fixed market hours)
+  const char* instrType = result["meta"]["instrumentType"] | "";
+  td.isCrypto = (strcmp(instrType, "CRYPTOCURRENCY") == 0);
 
   // Build points array: map Yahoo data proportionally into MAX_POINTS slots
   td.numPoints = 0;
