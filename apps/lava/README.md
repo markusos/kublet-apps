@@ -2,6 +2,10 @@
 
 Animated lava lamp simulation using metaball physics. Six blobs bounce, merge, and separate with gravity and damping for organic motion.
 
+## Preview
+
+![Lava preview](assets/preview.gif)
+
 ## Features
 
 - 6 metaballs rendered on a 48x48 grid, scaled 5x to fill the 240x240 display

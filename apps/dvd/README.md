@@ -2,6 +2,10 @@
 
 The classic bouncing DVD logo that changes color when it hits a wall. Surprisingly satisfying to watch.
 
+## Preview
+
+![DVD Screensaver preview](assets/preview.gif)
+
 ## Features
 
 - Blocky "DVD" logo bouncing around the 240x240 display

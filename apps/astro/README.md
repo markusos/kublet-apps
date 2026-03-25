@@ -2,6 +2,10 @@
 
 Astronomy Picture of the Day — displays NASA's daily space images directly from the APOD archive on a 240x240 display.
 
+## Preview
+
+![Astro preview](assets/preview.gif)
+
 ## Features
 
 - Fetches images directly from apod.nasa.gov (no API key needed)

@@ -2,6 +2,10 @@
 
 Analog clock face with hour markers, minute ticks, and smooth-moving hands. Time is synced via NTP.
 
+## Preview
+
+![Clock preview](assets/preview.gif)
+
 ## Features
 
 - Classic analog clock with 12 hour markers and 60 minute ticks

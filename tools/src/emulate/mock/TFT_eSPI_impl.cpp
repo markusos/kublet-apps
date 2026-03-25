@@ -130,10 +130,12 @@ void TFT_eSPI::fillCircle(int32_t cx, int32_t cy, int32_t r, uint16_t color) {
   drawFastHLine(cx - r, cy, 2 * r + 1, color);
   int32_t x = 0, y = r, d = 1 - r;
   while (x <= y) {
+    drawFastHLine(cx - y, cy + x, 2 * y + 1, color);
+    drawFastHLine(cx - y, cy - x, 2 * y + 1, color);
+    drawFastHLine(cx - x, cy + y, 2 * x + 1, color);
+    drawFastHLine(cx - x, cy - y, 2 * x + 1, color);
     if (d < 0) { d += 2*x + 3; }
-    else { drawFastHLine(cx-y, cy+x, 2*y+1, color); drawFastHLine(cx-y, cy-x, 2*y+1, color); d += 2*(x-y)+5; y--; }
-    drawFastHLine(cx-x, cy+y, 2*x+1, color);
-    drawFastHLine(cx-x, cy-y, 2*x+1, color);
+    else { d += 2*(x-y)+5; y--; }
     x++;
   }
 }

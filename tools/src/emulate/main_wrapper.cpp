@@ -26,26 +26,32 @@ static SDL_Texture*  g_texture  = nullptr;
 static int g_scale = 2;
 static bool g_running = true;
 
-static const char* g_screenshot_path = nullptr;
-static int g_screenshot_after_frames = 0;  // 0 = don't auto-screenshot
-static int g_frame_count = 0;
+// All timing is wall-clock milliseconds relative to loop start
+static uint32_t g_loop_start_ticks = 0;
+static uint32_t emu_elapsed() { return SDL_GetTicks() - g_loop_start_ticks; }
 
-// GIF capture state
+// Screenshot: --screenshot PATH --after SECONDS (default 2s)
+static const char* g_screenshot_path = nullptr;
+static uint32_t g_screenshot_after_ms = 2000;
+
+// GIF capture: --gif PATH --gif-duration SECONDS --gif-start SECONDS --gif-interval MS
 static const char* g_gif_path = nullptr;
 static const char* g_gif_frame_dir = nullptr;
-static int g_gif_frames = 0;
-static int g_gif_start_frame = 0;    // skip initial frames (setup)
-static int g_gif_frame_interval = 1; // capture every Nth frame
+static uint32_t g_gif_duration_ms = 4000;     // total capture duration
+static uint32_t g_gif_start_ms = 0;           // delay before capture starts
+static uint32_t g_gif_interval_ms = 100;      // time between frames (~10 fps)
+static uint32_t g_gif_last_capture_ms = 0;
 static int g_gif_captured = 0;
 
-// Scripted button presses: times in milliseconds {start_ms, duration_ms}
+// Scripted button presses: --button-at "seconds[:duration_ms],..."
 struct ButtonEvent { uint32_t start_ms; uint32_t duration_ms; };
 static ButtonEvent g_button_events[32];
 static int g_button_event_count = 0;
 
 // Called from digitalRead to check if a scripted button press is active
 bool _emu_scripted_button_active() {
-  uint32_t now = SDL_GetTicks();
+  if (g_loop_start_ticks == 0) return false;
+  uint32_t now = emu_elapsed();
   for (int i = 0; i < g_button_event_count; i++) {
     uint32_t start = g_button_events[i].start_ms;
     uint32_t end = start + g_button_events[i].duration_ms;
@@ -56,15 +62,33 @@ bool _emu_scripted_button_active() {
   return false;
 }
 
+// Pump SDL events during delay() so button state updates in real-time.
+void _emu_pump_events() {
+  SDL_Event e;
+  while (SDL_PollEvent(&e)) {
+    switch (e.type) {
+      case SDL_QUIT:
+        g_running = false;
+        break;
+      case SDL_KEYDOWN:
+        if (e.key.keysym.sym == SDLK_q) g_running = false;
+        else if (e.key.keysym.sym == SDLK_SPACE) _emu_set_button_state(true);
+        break;
+      case SDL_KEYUP:
+        if (e.key.keysym.sym == SDLK_SPACE) _emu_set_button_state(false);
+        break;
+    }
+  }
+}
+
 // Display registration — TFT_eSPI::begin() calls this to register itself.
-// We keep only the first one (KGFX::t), not sprites.
 static TFT_eSPI* g_display = nullptr;
 
 void _emu_register_display(void* tft) {
   if (!g_display) g_display = static_cast<TFT_eSPI*>(tft);
 }
 
-// Forward declarations for yield-based frame rendering
+// Forward declarations
 static void fb565_to_rgb888(const uint16_t* src, uint8_t* dst, int w, int h);
 static void captureGifFrame(const uint16_t* fb);
 
@@ -72,32 +96,30 @@ static void captureGifFrame(const uint16_t* fb);
 // Yield-based frame rendering (for GIF animation apps that decode in a loop)
 // ---------------------------------------------------------------------------
 static uint8_t* g_yield_rgb_buf = nullptr;
-static bool g_yield_rendered = false;  // true if yield rendered this loop iteration
+static bool g_yield_rendered = false;
 
 void _emu_yield_frame() {
   if (!g_display || !g_renderer || !g_texture) return;
   g_yield_rendered = true;
 
-  // Lazy-allocate buffer
   if (!g_yield_rgb_buf) g_yield_rgb_buf = new uint8_t[240 * 240 * 3];
 
-  // Render to screen
   fb565_to_rgb888(g_display->getFramebuffer(), g_yield_rgb_buf, 240, 240);
   SDL_UpdateTexture(g_texture, nullptr, g_yield_rgb_buf, 240 * 3);
   SDL_RenderClear(g_renderer);
   SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
   SDL_RenderPresent(g_renderer);
 
-  g_frame_count++;
-
-  // GIF frame capture during yield
-  if (g_gif_path && g_gif_frame_dir &&
-      g_frame_count >= g_gif_start_frame && g_gif_captured < g_gif_frames) {
-    int relative_frame = g_frame_count - g_gif_start_frame;
-    if (relative_frame % g_gif_frame_interval == 0) {
-      captureGifFrame(g_display->getFramebuffer());
-    }
-    if (g_gif_captured >= g_gif_frames) {
+  // GIF frame capture during yield (for animated GIF apps)
+  if (g_gif_path && g_gif_frame_dir && g_loop_start_ticks > 0) {
+    uint32_t elapsed = emu_elapsed();
+    uint32_t capture_end = g_gif_start_ms + g_gif_duration_ms;
+    if (elapsed >= g_gif_start_ms && elapsed < capture_end) {
+      if (elapsed - g_gif_last_capture_ms >= g_gif_interval_ms) {
+        captureGifFrame(g_display->getFramebuffer());
+        g_gif_last_capture_ms = elapsed;
+      }
+    } else if (elapsed >= capture_end && g_gif_captured > 0) {
       printf("[EMU] Captured %d GIF frames\n", g_gif_captured);
       g_running = false;
     }
@@ -110,9 +132,9 @@ void _emu_yield_frame() {
 static void fb565_to_rgb888(const uint16_t* src, uint8_t* dst, int w, int h) {
   for (int i = 0; i < w * h; i++) {
     uint16_t c = src[i];
-    dst[i*3 + 0] = ((c >> 11) & 0x1F) * 255 / 31;  // R
-    dst[i*3 + 1] = ((c >>  5) & 0x3F) * 255 / 63;  // G
-    dst[i*3 + 2] = ( c        & 0x1F) * 255 / 31;  // B
+    dst[i*3 + 0] = ((c >> 11) & 0x1F) * 255 / 31;
+    dst[i*3 + 1] = ((c >>  5) & 0x3F) * 255 / 63;
+    dst[i*3 + 2] = ( c        & 0x1F) * 255 / 31;
   }
 }
 
@@ -157,26 +179,24 @@ int main(int argc, char* argv[]) {
       if (g_scale > 4) g_scale = 4;
     } else if (strcmp(argv[i], "--screenshot") == 0 && i+1 < argc) {
       g_screenshot_path = argv[++i];
-      g_screenshot_after_frames = 60;
-    } else if (strcmp(argv[i], "--frames") == 0 && i+1 < argc) {
-      g_screenshot_after_frames = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "--after") == 0 && i+1 < argc) {
+      g_screenshot_after_ms = (uint32_t)(atof(argv[++i]) * 1000);
     } else if (strcmp(argv[i], "--gif") == 0 && i+1 < argc) {
       g_gif_path = argv[++i];
-    } else if (strcmp(argv[i], "--gif-frames") == 0 && i+1 < argc) {
-      g_gif_frames = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "--gif-duration") == 0 && i+1 < argc) {
+      g_gif_duration_ms = (uint32_t)(atof(argv[++i]) * 1000);
     } else if (strcmp(argv[i], "--gif-frame-dir") == 0 && i+1 < argc) {
       g_gif_frame_dir = argv[++i];
     } else if (strcmp(argv[i], "--gif-start") == 0 && i+1 < argc) {
-      g_gif_start_frame = atoi(argv[++i]);
+      g_gif_start_ms = (uint32_t)(atof(argv[++i]) * 1000);
     } else if (strcmp(argv[i], "--gif-interval") == 0 && i+1 < argc) {
-      g_gif_frame_interval = atoi(argv[++i]);
+      g_gif_interval_ms = atoi(argv[++i]);
     } else if (strcmp(argv[i], "--button-at") == 0 && i+1 < argc) {
       // Parse comma-separated "seconds[:duration_ms]" pairs
-      // e.g. "1.5" or "1.5:200" or "1,3:200,5"
       char* spec = strdup(argv[++i]);
       char* tok = strtok(spec, ",");
       while (tok && g_button_event_count < 32) {
-        float secs = 0; int dur_ms = 200; // default 200ms press
+        float secs = 0; int dur_ms = 500;
         if (char* colon = strchr(tok, ':')) {
           *colon = '\0';
           secs = atof(tok);
@@ -190,9 +210,6 @@ int main(int argc, char* argv[]) {
       free(spec);
     }
   }
-
-  // Default GIF settings
-  if (g_gif_path && g_gif_frames == 0) g_gif_frames = 120;
 
   // Init SDL
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -232,26 +249,20 @@ int main(int argc, char* argv[]) {
   // Render buffer
   uint8_t* rgb_buf = new uint8_t[240 * 240 * 3];
 
+  // Record loop start time (all timing is relative to this)
+  g_loop_start_ticks = SDL_GetTicks();
+
   // Main loop
+  static bool s_key_was_down = false;
   while (g_running) {
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-      switch (e.type) {
-        case SDL_QUIT:
-          g_running = false;
-          break;
-        case SDL_KEYDOWN:
-          if (e.key.keysym.sym == SDLK_q) g_running = false;
-          else if (e.key.keysym.sym == SDLK_SPACE) _emu_set_button_state(true);
-          else if (e.key.keysym.sym == SDLK_s && g_display) {
-            takeScreenshot("screenshot.png", g_display->getFramebuffer());
-          }
-          break;
-        case SDL_KEYUP:
-          if (e.key.keysym.sym == SDLK_SPACE) _emu_set_button_state(false);
-          break;
-      }
+    _emu_pump_events();
+
+    // Screenshot on 'S' key (edge-triggered)
+    const uint8_t* keystate = SDL_GetKeyboardState(nullptr);
+    if (keystate[SDL_SCANCODE_S] && !s_key_was_down && g_display) {
+      takeScreenshot("screenshot.png", g_display->getFramebuffer());
     }
+    s_key_was_down = keystate[SDL_SCANCODE_S];
 
     // Run one iteration of the app loop
     g_yield_rendered = false;
@@ -266,23 +277,23 @@ int main(int argc, char* argv[]) {
       SDL_RenderPresent(g_renderer);
     }
 
-    if (!g_yield_rendered) g_frame_count++;
+    uint32_t elapsed = emu_elapsed();
 
-    // Auto-screenshot mode
-    if (g_screenshot_path && g_screenshot_after_frames > 0 &&
-        g_frame_count >= g_screenshot_after_frames && g_display) {
+    // Auto-screenshot after wall time
+    if (g_screenshot_path && elapsed >= g_screenshot_after_ms && g_display) {
       takeScreenshot(g_screenshot_path, g_display->getFramebuffer());
       g_running = false;
     }
 
-    // GIF frame capture (skip if yield() already handled it)
-    if (!g_yield_rendered && g_gif_path && g_gif_frame_dir && g_display &&
-        g_frame_count >= g_gif_start_frame) {
-      int relative_frame = g_frame_count - g_gif_start_frame;
-      if (relative_frame % g_gif_frame_interval == 0) {
-        captureGifFrame(g_display->getFramebuffer());
-      }
-      if (g_gif_captured >= g_gif_frames) {
+    // GIF frame capture (wall-time based)
+    if (!g_yield_rendered && g_gif_path && g_gif_frame_dir && g_display) {
+      uint32_t capture_end = g_gif_start_ms + g_gif_duration_ms;
+      if (elapsed >= g_gif_start_ms && elapsed < capture_end) {
+        if (elapsed - g_gif_last_capture_ms >= g_gif_interval_ms) {
+          captureGifFrame(g_display->getFramebuffer());
+          g_gif_last_capture_ms = elapsed;
+        }
+      } else if (elapsed >= capture_end && g_gif_captured > 0) {
         printf("[EMU] Captured %d GIF frames\n", g_gif_captured);
         g_running = false;
       }

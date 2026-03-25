@@ -2,6 +2,10 @@
 
 S&P 500 and crypto intraday price charts using Yahoo Finance. Displays 10 tickers with color-coded gain/loss indicators.
 
+## Preview
+
+![Stock preview](assets/preview.gif)
+
 ## Features
 
 - 10-ticker watchlist: VOO, VGT, VTI, VXUS, AAPL, NVDA, GOOG, AMZN, ^VIX, BTC-USD

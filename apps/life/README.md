@@ -2,6 +2,10 @@
 
 Conway's Game of Life running on a toroidal grid. Mesmerizing to watch on a desk.
 
+## Preview
+
+![Game of Life preview](assets/preview.gif)
+
 ## Features
 
 - 48x48 cell grid on the 240x240 display (5px per cell)

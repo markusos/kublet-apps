@@ -2,10 +2,14 @@
 
 A cozy looping fireplace animation on a 240x240 display. Classic yule log vibes.
 
+## Preview
+
+N/A
+
 ## Features
 
 - Looping animated GIF embedded in flash
-- 19 frames at 240x240, extracted from a real fireplace video
+- 19 frames at 240x240
 - Continuous playback with no network required after boot
 
 ## Configuration

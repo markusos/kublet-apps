@@ -2,6 +2,10 @@
 
 Simple digital clock displaying time, day of week, and full date. Syncs via NTP.
 
+## Preview
+
+![Time preview](assets/preview.gif)
+
 ## Features
 
 - Large centered HH:MM time display (white)

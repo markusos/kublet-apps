@@ -2,6 +2,10 @@
 
 Displays now-playing track information and album artwork from Apple Music. Supports artwork view and detailed info view.
 
+## Preview
+
+![Music preview](assets/preview.gif)
+
 ## Features
 
 - Full 240x240 JPEG album artwork display with title/artist overlay

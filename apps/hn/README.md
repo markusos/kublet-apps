@@ -2,6 +2,10 @@
 
 Displays the top 5 stories from Hacker News with title, score, and comment count. Auto-cycles every 30 seconds.
 
+## Preview
+
+![Hacker News preview](assets/preview.gif)
+
 ## Features
 
 - Fetches top 5 stories from the official HN Firebase API (no auth required)

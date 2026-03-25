@@ -12,14 +12,13 @@ usage() {
   echo "Options:"
   echo "  --scale N              Window scale factor (default: 2)"
   echo "  --screenshot PATH      Capture screenshot and exit"
-  echo "  --frames N             Frames before screenshot (default: 60)"
+  echo "  --after SECONDS        Time before screenshot (default: 2)"
   echo "  --gif PATH             Capture animated GIF and exit"
-  echo "  --gif-frames N         Number of GIF frames to capture (default: 120)"
-  echo "  --gif-start N          Skip N initial frames before capturing (default: 10)"
-  echo "  --gif-interval N       Capture every Nth frame (default: 2)"
-  echo "  --gif-fps N            GIF playback framerate (default: 15)"
-  echo "  --button-at SPEC       Scripted button presses: frame[:duration],..."
-  echo "                         e.g. '30' '30:5' '30,60:3,90'"
+  echo "  --gif-start SECONDS    Wall time before capturing starts (default: 1)"
+  echo "  --gif-duration SECONDS Wall time to capture (default: 4)"
+  echo "  --gif-fps N            Capture and playback framerate (default: 10)"
+  echo "  --button-at SPEC       Scripted button presses: seconds[:duration_ms],..."
+  echo "                         e.g. '1.5' '1.5:200' '1,3:200,5'"
   echo ""
   echo "Keys (while running):"
   echo "  Space    Button (GPIO 19)"
@@ -45,24 +44,21 @@ check_prereqs() {
 # Parse app name (first non-flag argument)
 APP_NAME=""
 GIF_PATH=""
-GIF_FRAMES=120
-GIF_START=10
-GIF_INTERVAL=2
-GIF_FPS=15
+GIF_DURATION=4
+GIF_START=1
+GIF_FPS=10
 EXTRA_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gif)
       GIF_PATH="$2"; shift 2 ;;
-    --gif-frames)
-      GIF_FRAMES="$2"; shift 2 ;;
+    --gif-duration)
+      GIF_DURATION="$2"; shift 2 ;;
     --gif-start)
       GIF_START="$2"; shift 2 ;;
-    --gif-interval)
-      GIF_INTERVAL="$2"; shift 2 ;;
     --gif-fps)
       GIF_FPS="$2"; shift 2 ;;
-    --scale|--screenshot|--frames|--button-at)
+    --scale|--screenshot|--after|--button-at)
       EXTRA_ARGS+=("$1" "$2"); shift 2 ;;
     --help|-h)
       usage ;;
@@ -104,7 +100,6 @@ if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
 else
   CACHED_APP=$(grep "APP_DIR:PATH=" "$BUILD_DIR/CMakeCache.txt" 2>/dev/null | cut -d= -f2-)
   if [ "$CACHED_APP" != "$APP_DIR" ]; then
-    # App changed — clean rebuild needed since source files differ
     rm -rf "$BUILD_DIR"
     NEEDS_CONFIG=1
   fi
@@ -132,11 +127,14 @@ if [ -n "$GIF_PATH" ]; then
   FRAME_DIR=$(mktemp -d)
   trap "rm -rf '$FRAME_DIR'" EXIT
 
-  echo "Capturing $GIF_FRAMES frames for GIF..."
+  # Derive frame interval from fps
+  GIF_INTERVAL=$((1000 / GIF_FPS))
+
+  echo "Capturing GIF (start ${GIF_START}s, duration ${GIF_DURATION}s, ${GIF_FPS}fps)..."
   "$BUILD_DIR/emulate" \
     --gif "$GIF_PATH" \
     --gif-frame-dir "$FRAME_DIR" \
-    --gif-frames "$GIF_FRAMES" \
+    --gif-duration "$GIF_DURATION" \
     --gif-start "$GIF_START" \
     --gif-interval "$GIF_INTERVAL" \
     "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"

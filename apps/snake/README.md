@@ -2,6 +2,10 @@
 
 Classic snake game that plays itself using an AI controller. Watch the snake chase food, grow, and try to survive as long as possible.
 
+## Preview
+
+![Snake preview](assets/preview.gif)
+
 ## Features
 
 - 22x22 cell playfield on the 240x240 display with score bar at top

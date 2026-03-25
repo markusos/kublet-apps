@@ -2,6 +2,10 @@
 
 Animated maze generation and solving visualizer. Watches algorithms build a maze, then solve it step by step.
 
+## Preview
+
+![Maze preview](assets/preview.gif)
+
 ## Features
 
 - 23x23 cell maze on the 240x240 display

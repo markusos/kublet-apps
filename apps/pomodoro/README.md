@@ -2,6 +2,10 @@
 
 Pomodoro productivity timer with a visual ring-based progress indicator. 25-minute work phases and 5-minute breaks.
 
+## Preview
+
+![Pomodoro preview](assets/preview.gif)
+
 ## Features
 
 - 25-minute work phase (blue) and 5-minute break phase (green)

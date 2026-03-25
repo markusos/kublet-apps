@@ -2,6 +2,10 @@
 
 Animated underwater aquarium scene with fish, jellyfish, seahorses, crabs, seaweed, and rising bubbles on a 240x240 display.
 
+## Preview
+
+![Aquarium preview](assets/preview.gif)
+
 ## Features
 
 - Multiple creature types: small, medium, and large fish, jellyfish, crab, seahorse

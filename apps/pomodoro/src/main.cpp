@@ -79,7 +79,7 @@ void drawCentered(const char* text, const tftfont_t& font, uint16_t color, int y
 void drawMinutes(int minutesLeft) {
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", minutesLeft);
-  drawCentered(buf, Arial_48_Bold, CLR_TEXT, 95, 55);
+  drawCentered(buf, Arial_48_Bold, CLR_TEXT, 95, 48);
 }
 
 void drawLabel(TimerState st) {
@@ -236,6 +236,7 @@ void loop() {
     // Update minutes text only when it changes
     if (minutesLeft != prevMinutesLeft) {
       drawMinutes(minutesLeft);
+      drawLabel(state);  // redraw label (TTF background fill overlaps it)
       prevMinutesLeft = minutesLeft;
     }
   }

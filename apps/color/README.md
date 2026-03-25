@@ -2,6 +2,10 @@
 
 Fills the entire screen with a random color. Changes automatically every 5 minutes or instantly on button press.
 
+## Preview
+
+![Color preview](assets/preview.gif)
+
 ## Features
 
 - Random RGB color generation (avoids very dark colors)

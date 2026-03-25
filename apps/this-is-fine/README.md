@@ -2,10 +2,14 @@
 
 The classic "This is Fine" meme animation on a 240x240 display. A dog sits calmly in a burning room, sipping coffee.
 
+## Preview
+
+N/A
+
 ## Features
 
 - Looping animated GIF embedded in flash
-- 9 frames at 240x240, extracted from the original video
+- 9 frames at 240x240
 - Continuous playback with no network required after boot
 
 ## Configuration

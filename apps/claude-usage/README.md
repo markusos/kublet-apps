@@ -2,6 +2,10 @@
 
 Displays Claude Code session and weekly usage as circular gauge visualizations with a green Matrix-style theme.
 
+## Preview
+
+![Claude Usage preview](assets/preview.gif)
+
 ## Features
 
 - Two concentric ring gauges showing session and weekly usage percentages

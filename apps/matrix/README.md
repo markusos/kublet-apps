@@ -2,6 +2,10 @@
 
 Classic Matrix-style digital rain effect with falling random characters and glowing trails.
 
+## Preview
+
+![Matrix preview](assets/preview.gif)
+
 ## Features
 
 - 40 columns of falling characters (ASCII 33-126)

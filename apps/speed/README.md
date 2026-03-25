@@ -2,6 +2,10 @@
 
 Internet speed test using Cloudflare's speed test infrastructure. Measures ping, download, and upload with animated gauge visualizations.
 
+## Preview
+
+![Speed preview](assets/preview.gif)
+
 ## Features
 
 - Ping test: 5 iterations to Cloudflare, drops worst result

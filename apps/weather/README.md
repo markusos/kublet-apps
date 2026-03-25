@@ -2,6 +2,10 @@
 
 Current weather and 3-day forecast using the Open-Meteo API. Displays animated pixel art weather icons, temperature, and conditions on a 240x240 display.
 
+## Preview
+
+![Weather preview](assets/preview.gif)
+
 ## Features
 
 - Current weather with large animated icon, temperature, and condition label

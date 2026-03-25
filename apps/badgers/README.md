@@ -2,6 +2,10 @@
 
 This app shows an animated gif of [Badger Badger Badger](https://en.wikipedia.org/wiki/Badgers_(animation))
 
+## Preview
+
+![Badgers preview](assets/preview.gif)
+
 Dependency: https://github.com/bitbank2/AnimatedGIF
 
 Due to the Kublet display refresh rate the gif is not as smoth as the gif here:

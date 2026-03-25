@@ -44,7 +44,7 @@ void loop()
       tft.startWrite();
       while (gif.playFrame(false, NULL))
       {
-        yield();
+        delay(50);
       }
       gif.close();
       tft.endWrite();
