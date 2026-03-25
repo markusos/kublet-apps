@@ -106,13 +106,10 @@ void drawUI() {
   if (td.numPoints < 2) {
     ui.tft.setTTFFont(Arial_14_Bold);
     ui.tft.setTextColor(COLOR_GRAY, TFT_BLACK);
-    if (!td.fetched) {
-      ui.tft.setCursor(50, 120);
-      ui.tft.print("Loading...");
-    } else {
-      ui.tft.setCursor(60, 120);
-      ui.tft.print("No data");
-    }
+    const char* msg = td.fetched ? "No data" : "Loading...";
+    int mw = ui.tft.TTFtextWidth(msg);
+    ui.tft.setCursor((240 - mw) / 2, 120);
+    ui.tft.print(msg);
     return;
   }
 
@@ -272,18 +269,22 @@ void fetchTickerData(int idx) {
 
   HTTPClient http;
   char url[192];
-  // Use explicit period1/period2 (last 24h) instead of range=1d
-  // This ensures crypto gets a full 24h rolling window, not just since UTC midnight
-  unsigned long now = (unsigned long)(millis() / 1000) + 1774396800UL; // approx epoch
-  // Use NTP time if available, otherwise fall back to compile-time estimate
-  time_t epoch;
-  time(&epoch);
-  if (epoch > 1700000000) now = (unsigned long)epoch;
-  unsigned long period1 = now - 86400;
-  snprintf(url, sizeof(url),
-           "https://query1.finance.yahoo.com/v8/finance/chart/%s"
-           "?interval=5m&period1=%lu&period2=%lu&includePrePost=false",
-           encoded, period1, now);
+  if (td.isCrypto) {
+    // Already known to be crypto — use 24h rolling window directly
+    time_t epoch;
+    time(&epoch);
+    unsigned long now = (epoch > 1700000000) ? (unsigned long)epoch : (unsigned long)(millis() / 1000) + 1774396800UL;
+    unsigned long period1 = now - 86400;
+    snprintf(url, sizeof(url),
+             "https://query1.finance.yahoo.com/v8/finance/chart/%s"
+             "?interval=5m&period1=%lu&period2=%lu&includePrePost=false",
+             encoded, period1, now);
+  } else {
+    snprintf(url, sizeof(url),
+             "https://query1.finance.yahoo.com/v8/finance/chart/%s"
+             "?interval=5m&range=1d&includePrePost=false",
+             encoded);
+  }
 
   http.begin(secureClient, url);
   http.addHeader("User-Agent", "Mozilla/5.0");
@@ -345,9 +346,47 @@ void fetchTickerData(int idx) {
   td.lastPrice = result["meta"]["regularMarketPrice"] | openPrice;
   td.pctChange = (td.prevClose > 0) ? (td.lastPrice - td.prevClose) / td.prevClose * 100.0f : 0.0f;
 
-  // Detect crypto by instrument type (trades 24/7, no fixed market hours)
+  // Detect crypto by instrumentType — re-fetch with 24h rolling window if needed
   const char* instrType = result["meta"]["instrumentType"] | "";
   td.isCrypto = (strcmp(instrType, "CRYPTOCURRENCY") == 0);
+
+  if (td.isCrypto) {
+    time_t epoch;
+    time(&epoch);
+    if (epoch > 1700000000) {
+      unsigned long now = (unsigned long)epoch;
+      unsigned long period1 = now - 86400;
+      snprintf(url, sizeof(url),
+               "https://query1.finance.yahoo.com/v8/finance/chart/%s"
+               "?interval=5m&period1=%lu&period2=%lu&includePrePost=false",
+               encoded, period1, now);
+      http.begin(secureClient, url);
+      http.addHeader("User-Agent", "Mozilla/5.0");
+      http.addHeader("Accept", "application/json");
+      http.setTimeout(15000);
+      Serial.printf("  %s: re-fetching 24h window for crypto\n", ticker);
+      code = http.GET();
+      if (code == HTTP_CODE_OK) {
+        body = http.getString();
+        http.end();
+        doc.clear();
+        err = deserializeJson(doc, body, DeserializationOption::Filter(filter));
+        body = String();
+        if (!err) {
+          result = doc["chart"]["result"][0];
+          if (!result.isNull()) {
+            timestamps = result["timestamp"];
+            closes = result["indicators"]["quote"][0]["close"];
+            td.prevClose = result["meta"]["chartPreviousClose"] | td.prevClose;
+            td.lastPrice = result["meta"]["regularMarketPrice"] | td.lastPrice;
+            td.pctChange = (td.prevClose > 0) ? (td.lastPrice - td.prevClose) / td.prevClose * 100.0f : 0.0f;
+          }
+        }
+      } else {
+        http.end();
+      }
+    }
+  }
 
   // Build points array: map Yahoo data proportionally into MAX_POINTS slots
   td.numPoints = 0;
@@ -405,23 +444,13 @@ void fetchTickerData(int idx) {
                 ticker, td.prevClose, td.lastPrice, td.pctChange, td.numPoints);
 }
 
-// Fetch all tickers, updating the display as each one completes
-void fetchAllTickers() {
+// Per-ticker fetch timestamps for staleness check
+unsigned long tickerFetchTime[NUM_TICKERS] = {0};
+
+void fetchCurrentTicker() {
   marketOpen = ntpSynced && isMarketOpen();
-
-  for (int i = 0; i < (int)NUM_TICKERS; i++) {
-    fetchTickerData(i);
-
-    // Show progress: update display if we just fetched the current ticker
-    if (i == currentTicker) {
-      drawUI();
-    }
-
-    // Brief pause between requests
-    if (i < (int)NUM_TICKERS - 1) {
-      delay(500);
-    }
-  }
+  fetchTickerData(currentTicker);
+  tickerFetchTime[currentTicker] = millis();
 }
 
 void setup() {
@@ -457,21 +486,28 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     otaserver.handle(); // DO NOT EDIT
 
-    // Timer-based refresh of all tickers
-    if (lastTime == 0 || (millis() - lastTime) > (unsigned long)refreshTimeInSeconds * 1000) {
-      lastTime = millis();
-      fetchAllTickers();
+    // Fetch current ticker if stale or never fetched
+    unsigned long now = millis();
+    unsigned long age = now - tickerFetchTime[currentTicker];
+    if (tickerFetchTime[currentTicker] == 0 || age > (unsigned long)refreshTimeInSeconds * 1000) {
+      fetchCurrentTicker();
       drawUI();
     }
 
-    // Button press — cycle to next ticker (instant, from cache)
+    // Button press — cycle to next ticker
     bool pressed = (digitalRead(BUTTON_PIN) == LOW);
     if (pressed && !buttonWasPressed) {
       delay(50);
       if (digitalRead(BUTTON_PIN) == LOW) {
         currentTicker = (currentTicker + 1) % NUM_TICKERS;
         Serial.printf("Switched to %s\n", TICKERS[currentTicker]);
+        // Show cached data (or "Loading...") immediately, then fetch if stale
         drawUI();
+        unsigned long tickerAge = now - tickerFetchTime[currentTicker];
+        if (tickerFetchTime[currentTicker] == 0 || tickerAge > (unsigned long)refreshTimeInSeconds * 1000) {
+          fetchCurrentTicker();
+          drawUI();
+        }
       }
     }
     buttonWasPressed = pressed;
