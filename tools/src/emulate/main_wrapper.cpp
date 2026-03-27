@@ -6,6 +6,9 @@
 
 #include "mock/Arduino.h"
 #include "mock/TFT_eSPI.h"
+#include "mock/WebServer.h"
+#include <fstream>
+#include <sstream>
 
 // stb_image_write for screenshots
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -47,6 +50,17 @@ static int g_gif_captured = 0;
 struct ButtonEvent { uint32_t start_ms; uint32_t duration_ms; };
 static ButtonEvent g_button_events[32];
 static int g_button_event_count = 0;
+
+// Scripted notifications: --notify-at "seconds:source:sender:text,..."
+struct NotifyEvent {
+  uint32_t time_ms;
+  std::string source;
+  std::string sender;
+  std::string text;
+  bool fired;
+};
+static std::vector<NotifyEvent> g_notify_events;
+
 
 // Called from digitalRead to check if a scripted button press is active
 bool _emu_scripted_button_active() {
@@ -191,6 +205,46 @@ int main(int argc, char* argv[]) {
       g_gif_start_ms = (uint32_t)(atof(argv[++i]) * 1000);
     } else if (strcmp(argv[i], "--gif-interval") == 0 && i+1 < argc) {
       g_gif_interval_ms = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "--notify-at") == 0 && i+1 < argc) {
+      // Parse comma-separated "seconds:source:sender:text" entries
+      char* spec = strdup(argv[++i]);
+      char* entry = strtok(spec, ",");
+      while (entry) {
+        NotifyEvent ev;
+        ev.fired = false;
+        // Parse "seconds:source:sender:text"
+        char* p1 = strchr(entry, ':');
+        if (p1) {
+          *p1 = '\0';
+          ev.time_ms = (uint32_t)(atof(entry) * 1000);
+          char* p2 = strchr(p1 + 1, ':');
+          if (p2) {
+            *p2 = '\0';
+            ev.source = p1 + 1;
+            char* p3 = strchr(p2 + 1, ':');
+            if (p3) {
+              *p3 = '\0';
+              ev.sender = p2 + 1;
+              ev.text = p3 + 1;
+            } else {
+              ev.sender = p2 + 1;
+              ev.text = "Test notification";
+            }
+          } else {
+            ev.source = p1 + 1;
+            ev.sender = "Test";
+            ev.text = "Test notification";
+          }
+        } else {
+          ev.time_ms = (uint32_t)(atof(entry) * 1000);
+          ev.source = "test";
+          ev.sender = "Test";
+          ev.text = "Test notification";
+        }
+        g_notify_events.push_back(ev);
+        entry = strtok(nullptr, ",");
+      }
+      free(spec);
     } else if (strcmp(argv[i], "--button-at") == 0 && i+1 < argc) {
       // Parse comma-separated "seconds[:duration_ms]" pairs
       char* spec = strdup(argv[++i]);
@@ -239,6 +293,62 @@ int main(int argc, char* argv[]) {
   printf("[EMU] Kublet Emulator started (%dx scale)\n", g_scale);
   printf("[EMU] Keys: Space=Button, S=Screenshot, Q=Quit\n");
 
+  // Load scheduled notifications from assets/notifications.json if present
+  // Format: [{"time": 2.0, "source": "imessage", "sender": "Alice", "text": "Hey!"},  ...]
+  {
+    std::string appDir = EMU_APP_DIR;
+    if (!appDir.empty()) {
+      std::ifstream f(appDir + "/assets/notifications.json");
+      if (f.is_open()) {
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        std::string content = ss.str();
+        // Simple JSON array parser: find each object
+        size_t pos = 0;
+        while ((pos = content.find('{', pos)) != std::string::npos) {
+          size_t end = content.find('}', pos);
+          if (end == std::string::npos) break;
+          std::string obj = content.substr(pos, end - pos + 1);
+
+          auto getStr = [&](const char* key) -> std::string {
+            std::string needle = std::string("\"") + key + "\"";
+            size_t ki = obj.find(needle);
+            if (ki == std::string::npos) return "";
+            size_t q1 = obj.find('"', ki + needle.size() + 1);
+            if (q1 == std::string::npos) return "";
+            size_t q2 = obj.find('"', q1 + 1);
+            if (q2 == std::string::npos) return "";
+            return obj.substr(q1 + 1, q2 - q1 - 1);
+          };
+          auto getNum = [&](const char* key) -> float {
+            std::string needle = std::string("\"") + key + "\"";
+            size_t ki = obj.find(needle);
+            if (ki == std::string::npos) return 0;
+            size_t colon = obj.find(':', ki + needle.size());
+            if (colon == std::string::npos) return 0;
+            return atof(obj.c_str() + colon + 1);
+          };
+
+          NotifyEvent ev;
+          ev.fired = false;
+          ev.time_ms = (uint32_t)(getNum("time") * 1000);
+          ev.source = getStr("source");
+          ev.sender = getStr("sender");
+          ev.text = getStr("text");
+          if (ev.source.empty()) ev.source = "test";
+          if (ev.sender.empty()) ev.sender = "Test";
+          if (ev.text.empty()) ev.text = "Test notification";
+
+          g_notify_events.push_back(ev);
+          printf("[EMU] Loaded notification: %.1fs [%s] %s: %s\n",
+            ev.time_ms / 1000.0f, ev.source.c_str(), ev.sender.c_str(), ev.text.c_str());
+
+          pos = end + 1;
+        }
+      }
+    }
+  }
+
   // Run app setup
   setup();
 
@@ -263,6 +373,24 @@ int main(int argc, char* argv[]) {
       takeScreenshot("screenshot.png", g_display->getFramebuffer());
     }
     s_key_was_down = keystate[SDL_SCANCODE_S];
+
+    // Fire scheduled notifications (--notify-at)
+    {
+      uint32_t elapsed = emu_elapsed();
+      for (auto& ev : g_notify_events) {
+        if (!ev.fired && elapsed >= ev.time_ms) {
+          ev.fired = true;
+          char json[512];
+          snprintf(json, sizeof(json),
+            "{\"source\":\"%s\",\"sender\":\"%s\",\"text\":\"%s\",\"timestamp\":%u}",
+            ev.source.c_str(), ev.sender.c_str(), ev.text.c_str(),
+            (unsigned)(time(nullptr)));
+          printf("[EMU] Firing notification at %.1fs: [%s] %s: %s\n",
+            ev.time_ms / 1000.0f, ev.source.c_str(), ev.sender.c_str(), ev.text.c_str());
+          server.enqueueNotification(std::string(json));
+        }
+      }
+    }
 
     // Run one iteration of the app loop
     g_yield_rendered = false;

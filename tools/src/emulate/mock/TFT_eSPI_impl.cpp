@@ -65,19 +65,48 @@ void TFT_eSPI::drawRoundRect(int32_t x, int32_t y, int32_t w, int32_t h, int32_t
 }
 
 void TFT_eSPI::fillRoundRect(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r, uint16_t color) {
-  fillRect(x, y + r, w, h - 2 * r, color);
-  // Fill corners
-  int32_t cx1 = x + r, cx2 = x + w - r - 1, cy1 = y + r, cy2 = y + h - r - 1;
-  int32_t f = 1 - r, ddF_x = 1, ddF_y = -2 * r, px = 0, py = r;
-  drawFastHLine(cx1 - r, y, cx2 - cx1 + 2 * r, color);
-  drawFastHLine(cx1 - r, y + h - 1, cx2 - cx1 + 2 * r, color);
+  if (r <= 0) { fillRect(x, y, w, h, color); return; }
+  if (r > w / 2) r = w / 2;
+  if (r > h / 2) r = h / 2;
+
+  // Fill center rectangle
+  fillRect(x + r, y, w - 2 * r, h, color);
+  // Fill left and right strips (between corners)
+  fillRect(x, y + r, r, h - 2 * r, color);
+  fillRect(x + w - r, y + r, r, h - 2 * r, color);
+
+  // Fill four corners using midpoint circle (scanline fill)
+  int32_t cx1 = x + r;           // left corner center x
+  int32_t cx2 = x + w - 1 - r;   // right corner center x
+  int32_t cy1 = y + r;           // top corner center y
+  int32_t cy2 = y + h - 1 - r;   // bottom corner center y
+
+  int32_t f = 1 - r, ddF_x = 1, ddF_y = -2 * r;
+  int32_t px = 0, py = r;
+
+  // Fill the px==0 scanlines (top and bottom of circle)
+  drawFastHLine(cx1 - r, cy1 - 0, 1 + r, color);  // top-left at py offset
+  drawFastHLine(cx2, cy1 - 0, 1 + r, color);       // top-right
+  drawFastHLine(cx1 - r, cy2 + 0, 1 + r, color);   // bottom-left
+  drawFastHLine(cx2, cy2 + 0, 1 + r, color);        // bottom-right
+
   while (px < py) {
     if (f >= 0) { py--; ddF_y += 2; f += ddF_y; }
     px++; ddF_x += 2; f += ddF_x;
-    drawFastHLine(cx1 - px, cy1 - py, cx2 - cx1 + 2 * px, color);
-    drawFastHLine(cx1 - py, cy1 - px, cx2 - cx1 + 2 * py, color);
-    drawFastHLine(cx1 - px, cy2 + py, cx2 - cx1 + 2 * px, color);
-    drawFastHLine(cx1 - py, cy2 + px, cx2 - cx1 + 2 * py, color);
+
+    // Each iteration fills 4 scanlines per corner (8 total for top+bottom)
+    // Top-left corner
+    drawFastHLine(cx1 - px, cy1 - py, px + 1, color);
+    drawFastHLine(cx1 - py, cy1 - px, py + 1, color);
+    // Top-right corner
+    drawFastHLine(cx2, cy1 - py, px + 1, color);
+    drawFastHLine(cx2, cy1 - px, py + 1, color);
+    // Bottom-left corner
+    drawFastHLine(cx1 - px, cy2 + py, px + 1, color);
+    drawFastHLine(cx1 - py, cy2 + px, py + 1, color);
+    // Bottom-right corner
+    drawFastHLine(cx2, cy2 + py, px + 1, color);
+    drawFastHLine(cx2, cy2 + px, py + 1, color);
   }
 }
 

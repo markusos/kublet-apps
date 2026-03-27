@@ -5,14 +5,14 @@ import os
 import subprocess
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).parent
+_DIR = Path(__file__).parent
 
 
 def get_usage_data(log, cached, **_kwargs) -> dict:
     """Fetch Claude Code usage by running fetch_claude_usage.sh."""
 
     def _fetch():
-        script = SCRIPT_DIR / "fetch_claude_usage.sh"
+        script = _DIR / "fetch_claude_usage.sh"
         try:
             result = subprocess.run(
                 [str(script)],

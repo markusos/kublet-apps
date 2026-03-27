@@ -43,12 +43,17 @@ public:
 
 inline Preferences pref;
 
+// Forward-declare the global server from WebServer.h
+class WebServer;
+extern WebServer server;
+
 class OTAServer {
 public:
   void init() { Serial.println("[EMU] OTAServer init (no-op)"); }
   void start() {}
-  void run() { Serial.println("[EMU] OTAServer run (no-op)"); }
-  void handle() {}
+  void run();  // defined in WebServer_impl.cpp — starts TCP listener
+  void handle();  // defined in WebServer_impl.cpp — calls server.handleClient()
   void stop() {}
   void connectWiFi() { Serial.println("[EMU] WiFi simulated — connected"); }
 };
+

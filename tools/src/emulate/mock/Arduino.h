@@ -204,11 +204,21 @@ inline bool getLocalTime(struct tm* info, uint32_t = 5000) {
 // ---------------------------------------------------------------------------
 // WiFi stub
 // ---------------------------------------------------------------------------
+class IPAddress {
+  String _str;
+public:
+  IPAddress(const char* s = "127.0.0.1") : _str(s) {}
+  String toString() const { return _str; }
+  const char* c_str() const { return _str.c_str(); }
+};
+
 class WiFiClass {
 public:
   int status() { return WL_CONNECTED; }
-  const char* localIP() { return "127.0.0.1"; }
+  IPAddress localIP() { return IPAddress("127.0.0.1"); }
   const char* macAddress() { return "00:00:00:00:00:00"; }
+  void mode(int) {}
+  void begin(const char*, const char*) {}
 };
 
 extern WiFiClass WiFi;

@@ -8,6 +8,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from shared import log
+
 _ARTWORK_CACHE_DIR = Path(tempfile.gettempdir()) / "kublet-artwork"
 _artwork_cache: dict[str, str] = {}  # {"key": track_key, "path": jpeg_path}
 
@@ -26,9 +28,6 @@ tell application "Music"
 end tell
 """
 
-# Module-level log function, set by register()
-_log = print
-
 
 def _run_osascript(script: str, timeout: int = 5) -> str | None:
     """Run an AppleScript and return stdout, or None on failure."""
@@ -40,7 +39,7 @@ def _run_osascript(script: str, timeout: int = 5) -> str | None:
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     except subprocess.TimeoutExpired:
-        _log("osascript timed out")
+        log("osascript timed out")
     return None
 
 
@@ -122,7 +121,7 @@ end tell
             capture_output=True, timeout=10,
         )
     except subprocess.TimeoutExpired:
-        _log("sips resize timed out")
+        log("sips resize timed out")
         return None
 
     raw_path.unlink(missing_ok=True)
@@ -132,7 +131,7 @@ end tell
 
     _artwork_cache["key"] = track_key
     _artwork_cache["path"] = str(jpeg_path)
-    _log(f"artwork: cached as {jpeg_path.name}")
+    log(f"artwork: cached as {jpeg_path.name}")
     return str(jpeg_path)
 
 
@@ -151,10 +150,10 @@ def _fetch_artwork_from_itunes(title: str, artist: str, output_path: Path) -> bo
         # Request 600x600 for quality (sips will resize to 240x240)
         art_url = art_url.replace("100x100", "600x600")
         urllib.request.urlretrieve(art_url, str(output_path))
-        _log("artwork: fetched from iTunes Search API")
+        log("artwork: fetched from iTunes Search API")
         return output_path.exists() and output_path.stat().st_size > 0
     except Exception as e:
-        _log(f"artwork: iTunes API error: {e}")
+        log(f"artwork: iTunes API error: {e}")
         return False
 
 
@@ -173,9 +172,3 @@ def get_music_artwork(log, cached, **_kwargs) -> dict | str | None:
     if not path:
         return None
     return {"_binary": path, "_content_type": "image/jpeg"}
-
-
-def register(log_fn):
-    """Set the shared log function."""
-    global _log
-    _log = log_fn

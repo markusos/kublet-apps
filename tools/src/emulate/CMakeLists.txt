@@ -44,6 +44,7 @@ set(SOURCES
   main_wrapper.cpp
   mock/TFT_eSPI_impl.cpp
   mock/Arduino_impl.cpp
+  mock/WebServer_impl.cpp
   "${APP_DIR}/src/main.cpp"
   "${KGFX_DIR}/kgfx.cpp"
   "${KGFX_DIR}/font_Arial.c"
@@ -81,6 +82,7 @@ set(CPP_SOURCES
   main_wrapper.cpp
   mock/TFT_eSPI_impl.cpp
   mock/Arduino_impl.cpp
+  mock/WebServer_impl.cpp
   "${APP_DIR}/src/main.cpp"
   "${KGFX_DIR}/kgfx.cpp"
 )

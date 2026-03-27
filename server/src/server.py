@@ -2,18 +2,18 @@
 """
 Unified Kublet app server.
 
-Serves JSON endpoints for Kublet ESP32 apps. Each endpoint module registers
-its own routes. Adding a new app is as simple as creating a module with
-handler functions and adding them to the ROUTES dict below.
+Serves JSON endpoints for Kublet ESP32 apps. Apps are auto-discovered from
+the apps/ directory — each sub-package exports a ROUTES dict and an optional
+register() function for background work.
 
-Current endpoints:
-  GET /api/usage          — Claude Code session/weekly usage percentages
-  GET /api/music          — Now-playing track info from Music.app
-  GET /api/music/artwork  — 240x240 JPEG album artwork for current track
+Adding a new app:
+  1. Create a directory under server/src/apps/<name>/
+  2. Add __init__.py that exports ROUTES (dict) and optionally register (fn)
+  3. That's it — routes are picked up automatically on next server start
 
 Environment variables:
-  PORT       - Server port (default: 8198)
-  CLAUDE_BIN - Path to claude binary (used by fetch_claude_usage.sh)
+  PORT       — Server port (default: 8198)
+  CLAUDE_BIN — Path to claude binary (used by fetch_claude_usage.sh)
 
 Usage:
   python server.py
@@ -22,56 +22,26 @@ Usage:
 import http.server
 import json
 import os
-import time
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-from music import get_music_artwork, get_music_data
-from music import register as music_register
-from usage import get_usage_data
+from shared import log, cached
+from apps import discover
 
 PORT = int(os.environ.get("PORT", "8198"))
 
 # ---------------------------------------------------------------------------
-# Logging
+# Auto-discover apps and register routes
 # ---------------------------------------------------------------------------
 
+ROUTES, _register_fns = discover()
 
-def log(msg: str):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
-
-
-# ---------------------------------------------------------------------------
-# Cache helper
-# ---------------------------------------------------------------------------
-
-_caches: dict[str, dict] = {}
-
-
-def cached(key: str, ttl: int, fetch_fn):
-    """Return cached data or call fetch_fn to refresh."""
-    now = time.time()
-    entry = _caches.get(key)
-    if entry and (now - entry["ts"]) < ttl:
-        return entry["data"]
-    data = fetch_fn()
-    _caches[key] = {"data": data, "ts": now}
-    return data
-
-
-# ---------------------------------------------------------------------------
-# Route registry
-# ---------------------------------------------------------------------------
-
-# Inject shared dependencies into endpoint modules
-music_register(log)
-
-ROUTES = {
-    "/api/usage": get_usage_data,
-    "/api/music": get_music_data,
-    "/api/music/artwork": get_music_artwork,
-}
+for name, fn in _register_fns:
+    try:
+        fn()
+        log(f"Registered: {name}")
+    except Exception as e:
+        log(f"Failed to register {name}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +67,16 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"error": "not available"}).encode())
+            return
+
+        # HTML response (e.g. OAuth callback page)
+        if isinstance(data, dict) and "_html" in data:
+            body = data["_html"].encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         # Binary response (e.g. artwork image)
@@ -127,7 +107,7 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
 
 def main():
     log(f"Kublet server running on http://0.0.0.0:{PORT}")
-    for path in ROUTES:
+    for path in sorted(ROUTES):
         log(f"  {path}")
     server = http.server.HTTPServer(("0.0.0.0", PORT), AppHandler)
     try:
