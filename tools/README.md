@@ -108,5 +108,17 @@ tools/
 ## Running Tests
 
 ```bash
-uv run pytest tools/tests
+uv run pytest tools/tests                          # all tests
+uv run pytest tools/tests/test_emulate.py          # emulator tests only
+uv run pytest tools/tests/test_emulate.py -k build # build smoke tests only
 ```
+
+### Emulator Test Suite
+
+| Test Class | What it checks |
+|---|---|
+| `TestBuildSmoke` | All 24 apps compile against emulator mocks |
+| `TestScreenshot` | Apps produce non-blank visual output |
+| `TestHTTPFixtures` | HTTP apps have fixture files |
+| `TestNoticeApp` | Notification injection and display |
+| `TestAssets` | JSON asset files are well-formed |

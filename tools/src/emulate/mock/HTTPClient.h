@@ -1,6 +1,7 @@
 #pragma once
 #include "Arduino.h"
 #include "WiFiClientSecure.h"
+#include "ArduinoJSON.h"
 #include <string>
 #include <vector>
 #include <fstream>
@@ -103,7 +104,6 @@ inline std::string readFile(const std::string& path) {
   return ss.str();
 }
 
-// Minimal JSON fixture parser — extracts url, file, status from http_fixtures.json
 struct Fixture {
   std::string urlPattern;
   std::string file;
@@ -118,50 +118,23 @@ inline std::vector<Fixture> loadFixtures() {
   std::string content = readFile(appDir + "/assets/http_fixtures.json");
   if (content.empty()) return fixtures;
 
-  // Minimal JSON array parser — expects [{...}, {...}]
-  size_t pos = 0;
-  while (pos < content.size()) {
-    size_t objStart = content.find('{', pos);
-    if (objStart == std::string::npos) break;
-    size_t objEnd = content.find('}', objStart);
-    if (objEnd == std::string::npos) break;
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, content);
+  if (err) {
+    printf("[EMU] WARNING: Failed to parse http_fixtures.json: %s\n", err.c_str());
+    return fixtures;
+  }
 
-    std::string obj = content.substr(objStart, objEnd - objStart + 1);
+  JsonArray arr = doc.as<JsonArray>();
+  for (JsonObject obj : arr) {
     Fixture f;
-    f.status = 200;
-
-    // Extract "url": "..."
-    auto extractStr = [&](const char* key) -> std::string {
-      std::string k = std::string("\"") + key + "\"";
-      size_t ki = obj.find(k);
-      if (ki == std::string::npos) return "";
-      size_t colon = obj.find(':', ki + k.size());
-      if (colon == std::string::npos) return "";
-      size_t q1 = obj.find('"', colon + 1);
-      if (q1 == std::string::npos) return "";
-      size_t q2 = obj.find('"', q1 + 1);
-      if (q2 == std::string::npos) return "";
-      return obj.substr(q1 + 1, q2 - q1 - 1);
-    };
-
-    f.urlPattern = extractStr("url");
-    f.file = extractStr("file");
-
-    // Extract "status": N
-    {
-      size_t si = obj.find("\"status\"");
-      if (si != std::string::npos) {
-        size_t colon = obj.find(':', si + 8);
-        if (colon != std::string::npos) {
-          f.status = atoi(obj.c_str() + colon + 1);
-        }
-      }
-    }
+    f.urlPattern = obj["url"] | "";
+    f.file = obj["file"] | "";
+    f.status = obj["status"] | 200;
 
     if (!f.urlPattern.empty() && !f.file.empty()) {
       fixtures.push_back(f);
     }
-    pos = objEnd + 1;
   }
   return fixtures;
 }
@@ -220,6 +193,7 @@ inline MatchResult matchFixture(const std::string& url) {
       }
     }
   }
+  printf("[EMU] WARNING: No fixture matched URL: %s\n", url.c_str());
   return {false, 200, "{}"};
 }
 
@@ -241,6 +215,9 @@ public:
   void setFollowRedirects(int) {}
   void setReuse(bool) {}
   void setTimeout(int) {}
+  void setUserAgent(const String&) {}
+  void setAuthorization(const char*) {}
+  void setAuthorization(const char*, const char*) {}
 
   int GET() {
     auto result = _emu_http::matchFixture(std::string(_url.c_str()));

@@ -32,6 +32,9 @@ public:
   TFT_eSPI* _dest;
   bool _useTFT = true;
 
+  // Allow both ui.tft and ui.tft() access patterns
+  TFT_eSPI_ext& operator()() { return *this; }
+
   // Default constructor — uses self as TTF destination
   TFT_eSPI_ext()
   {

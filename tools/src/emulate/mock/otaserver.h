@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Arduino.h"
+#include "ArduinoJSON.h"
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -15,7 +16,6 @@ public:
   bool begin(const char*, bool = false) { return true; }
   void end() {}
   String getString(const char* key, const String& def = "") {
-    // Try loading from assets/preferences.json
     std::string appDir = EMU_APP_DIR;
     if (appDir.empty()) return def;
 
@@ -24,19 +24,20 @@ public:
 
     std::ostringstream ss;
     ss << f.rdbuf();
-    std::string content = ss.str();
 
-    // Simple JSON key lookup: "key": "value"
-    std::string needle = std::string("\"") + key + "\"";
-    size_t ki = content.find(needle);
-    if (ki == std::string::npos) return def;
-    size_t colon = content.find(':', ki + needle.size());
-    if (colon == std::string::npos) return def;
-    size_t q1 = content.find('"', colon + 1);
-    if (q1 == std::string::npos) return def;
-    size_t q2 = content.find('"', q1 + 1);
-    if (q2 == std::string::npos) return def;
-    return String(content.substr(q1 + 1, q2 - q1 - 1).c_str());
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, ss.str());
+    if (err) {
+      printf("[EMU] WARNING: Failed to parse preferences.json: %s\n", err.c_str());
+      return def;
+    }
+
+    const char* val = doc[key];
+    if (!val) {
+      printf("[EMU] WARNING: Preference key '%s' not found in preferences.json\n", key);
+      return def;
+    }
+    return String(val);
   }
   void putString(const char*, const String&) {}
 };

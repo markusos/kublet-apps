@@ -19,6 +19,7 @@ usage() {
   echo "  --gif-fps N            Capture and playback framerate (default: 10)"
   echo "  --button-at SPEC       Scripted button presses: seconds[:duration_ms],..."
   echo "                         e.g. '1.5' '1.5:200' '1,3:200,5'"
+  echo "  --generate-reference   Save reference screenshot to app assets for regression tests"
   echo ""
   echo "Keys (while running):"
   echo "  Space    Button (GPIO 19)"
@@ -47,6 +48,7 @@ GIF_PATH=""
 GIF_DURATION=4
 GIF_START=1
 GIF_FPS=10
+GENERATE_REF=0
 EXTRA_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +60,8 @@ while [[ $# -gt 0 ]]; do
       GIF_START="$2"; shift 2 ;;
     --gif-fps)
       GIF_FPS="$2"; shift 2 ;;
+    --generate-reference)
+      GENERATE_REF=1; shift ;;
     --scale|--screenshot|--after|--button-at)
       EXTRA_ARGS+=("$1" "$2"); shift 2 ;;
     --help|-h)
@@ -114,6 +118,23 @@ fi
 echo "Building $APP_NAME..."
 cmake --build "$BUILD_DIR" 2>&1
 echo ""
+
+# Generate reference screenshot
+if [ $GENERATE_REF -eq 1 ]; then
+  REF_PATH="$APP_DIR/assets/reference.png"
+  mkdir -p "$APP_DIR/assets"
+  echo "Generating reference screenshot for $APP_NAME..."
+  "$BUILD_DIR/emulate" --screenshot "$REF_PATH" --after 3 \
+    "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+  if [ -f "$REF_PATH" ]; then
+    SIZE=$(wc -c < "$REF_PATH" | tr -d ' ')
+    echo "Reference saved: $REF_PATH ($SIZE bytes)"
+  else
+    echo "Error: screenshot was not produced"
+    exit 1
+  fi
+  exit 0
+fi
 
 # Run
 if [ -n "$GIF_PATH" ]; then

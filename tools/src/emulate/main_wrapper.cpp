@@ -7,6 +7,7 @@
 #include "mock/Arduino.h"
 #include "mock/TFT_eSPI.h"
 #include "mock/WebServer.h"
+#include "mock/ArduinoJSON.h"
 #include <fstream>
 #include <sstream>
 
@@ -294,7 +295,6 @@ int main(int argc, char* argv[]) {
   printf("[EMU] Keys: Space=Button, S=Screenshot, Q=Quit\n");
 
   // Load scheduled notifications from assets/notifications.json if present
-  // Format: [{"time": 2.0, "source": "imessage", "sender": "Alice", "text": "Hey!"},  ...]
   {
     std::string appDir = EMU_APP_DIR;
     if (!appDir.empty()) {
@@ -303,47 +303,25 @@ int main(int argc, char* argv[]) {
         std::ostringstream ss;
         ss << f.rdbuf();
         std::string content = ss.str();
-        // Simple JSON array parser: find each object
-        size_t pos = 0;
-        while ((pos = content.find('{', pos)) != std::string::npos) {
-          size_t end = content.find('}', pos);
-          if (end == std::string::npos) break;
-          std::string obj = content.substr(pos, end - pos + 1);
 
-          auto getStr = [&](const char* key) -> std::string {
-            std::string needle = std::string("\"") + key + "\"";
-            size_t ki = obj.find(needle);
-            if (ki == std::string::npos) return "";
-            size_t q1 = obj.find('"', ki + needle.size() + 1);
-            if (q1 == std::string::npos) return "";
-            size_t q2 = obj.find('"', q1 + 1);
-            if (q2 == std::string::npos) return "";
-            return obj.substr(q1 + 1, q2 - q1 - 1);
-          };
-          auto getNum = [&](const char* key) -> float {
-            std::string needle = std::string("\"") + key + "\"";
-            size_t ki = obj.find(needle);
-            if (ki == std::string::npos) return 0;
-            size_t colon = obj.find(':', ki + needle.size());
-            if (colon == std::string::npos) return 0;
-            return atof(obj.c_str() + colon + 1);
-          };
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, content);
+        if (err) {
+          printf("[EMU] WARNING: Failed to parse notifications.json: %s\n", err.c_str());
+        } else {
+          JsonArray arr = doc.as<JsonArray>();
+          for (JsonObject obj : arr) {
+            NotifyEvent ev;
+            ev.fired = false;
+            ev.time_ms = (uint32_t)(obj["time"].as<float>() * 1000);
+            ev.source = obj["source"] | "test";
+            ev.sender = obj["sender"] | "Test";
+            ev.text = obj["text"] | "Test notification";
 
-          NotifyEvent ev;
-          ev.fired = false;
-          ev.time_ms = (uint32_t)(getNum("time") * 1000);
-          ev.source = getStr("source");
-          ev.sender = getStr("sender");
-          ev.text = getStr("text");
-          if (ev.source.empty()) ev.source = "test";
-          if (ev.sender.empty()) ev.sender = "Test";
-          if (ev.text.empty()) ev.text = "Test notification";
-
-          g_notify_events.push_back(ev);
-          printf("[EMU] Loaded notification: %.1fs [%s] %s: %s\n",
-            ev.time_ms / 1000.0f, ev.source.c_str(), ev.sender.c_str(), ev.text.c_str());
-
-          pos = end + 1;
+            g_notify_events.push_back(ev);
+            printf("[EMU] Loaded notification: %.1fs [%s] %s: %s\n",
+              ev.time_ms / 1000.0f, ev.source.c_str(), ev.sender.c_str(), ev.text.c_str());
+          }
         }
       }
     }
