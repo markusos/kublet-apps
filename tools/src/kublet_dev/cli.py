@@ -21,6 +21,7 @@ from kublet_dev.config import (
 )
 from kublet_dev.devices import load_devices, resolve_device_ip, save_device
 from kublet_dev.flash import (
+    blank_region,
     cleanup_generated_files,
     detect_serial_port,
     flash,
@@ -97,6 +98,7 @@ def cmd_init(args: argparse.Namespace) -> None:
             )
             return
 
+        blank_region(port, "0xE000", 0x2000, "OTA data")
         flash(
             port,
             [
@@ -177,6 +179,15 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     ip = resolve_device_ip(getattr(args, "device", None), args.ip)
 
     print(f"🚀 Deploying '{app_name}' to {ip}")
+
+    # Run app-specific setup if present (e.g. OAuth flows, code generation)
+    setup_script = app_dir / "setup.py"
+    if setup_script.exists() and not args.skip_build:
+        print(f"\n⚙  Running setup for {app_name}...")
+        result = subprocess.run([sys.executable, str(setup_script)], cwd=app_dir)
+        if result.returncode != 0:
+            print("  ✗ Setup failed.")
+            sys.exit(1)
 
     firmware_bin = app_dir / ".pio" / "build" / "esp32dev" / "firmware.bin"
 

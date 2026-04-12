@@ -39,7 +39,13 @@ public:
     }
     return String(val);
   }
+  unsigned long getULong(const char* key, unsigned long def = 0) {
+    String val = getString(key, "");
+    if (val.length() == 0) return def;
+    return strtoul(val.c_str(), nullptr, 10);
+  }
   void putString(const char*, const String&) {}
+  void putULong(const char*, unsigned long) {}
 };
 
 inline Preferences pref;

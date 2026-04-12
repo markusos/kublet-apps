@@ -144,6 +144,21 @@ def cleanup_generated_files() -> None:
             path.unlink()
 
 
+def blank_region(port: str, offset: str, size: int, label: str) -> None:
+    """Overwrite a flash region with 0xFF using write_flash (avoids erase_region security restrictions)."""
+    import tempfile
+
+    print(f"\n🗑  Clearing {label} ({offset}, {size} bytes)...")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(b"\xff" * size)
+        tmp_path = Path(f.name)
+
+    try:
+        flash(port, [(offset, tmp_path)], label)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def flash(port: str, flash_items: list[tuple[str, Path]], label: str) -> None:
     """Flash one or more offset/file pairs using esptool.py."""
     print(f"\n⚡ Flashing {label} to {port}...")
