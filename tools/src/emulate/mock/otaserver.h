@@ -54,6 +54,14 @@ inline Preferences pref;
 class WebServer;
 extern WebServer server;
 
+#define OTA_GIF_MAX_BYTES (80 * 1024)
+
+// Mock of the pushed-GIF channel. Set KUBLET_EMU_GIF to a file path and the
+// emulator hands that GIF to the app once, the same way a real push does.
+inline uint8_t* _emu_gif_buffer = nullptr;
+inline size_t _emu_gif_length = 0;
+inline bool _emu_gif_loaded = false;
+
 class OTAServer {
 public:
   void init() { Serial.println("[EMU] OTAServer init (no-op)"); }
@@ -62,5 +70,51 @@ public:
   void handle();  // defined in WebServer_impl.cpp — calls server.handleClient()
   void stop() {}
   void connectWiFi() { Serial.println("[EMU] WiFi simulated — connected"); }
+
+  bool gifReady() {
+    if (_emu_gif_loaded) return _emu_gif_buffer != nullptr;
+    _emu_gif_loaded = true;
+
+    const char* path = getenv("KUBLET_EMU_GIF");
+    if (!path || !*path) return false;
+
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (!f.is_open()) {
+      printf("[EMU] WARNING: cannot open KUBLET_EMU_GIF '%s'\n", path);
+      return false;
+    }
+    std::streamsize size = f.tellg();
+    f.seekg(0, std::ios::beg);
+    if (size <= 0 || size > OTA_GIF_MAX_BYTES) {
+      printf("[EMU] WARNING: gif is %lld bytes, limit is %d\n",
+             (long long)size, OTA_GIF_MAX_BYTES);
+      return false;
+    }
+
+    _emu_gif_buffer = (uint8_t*)malloc((size_t)size);
+    if (!_emu_gif_buffer) return false;
+    f.read((char*)_emu_gif_buffer, size);
+    _emu_gif_length = (size_t)size;
+    printf("[EMU] Pushed gif loaded: %s (%lld bytes)\n", path, (long long)size);
+    return true;
+  }
+
+  const uint8_t* gifData() { return _emu_gif_buffer; }
+  size_t gifLength() { return _emu_gif_length; }
+  uint32_t gifDurationMs() {
+    const char* s = getenv("KUBLET_EMU_GIF_SECONDS");
+    if (s && *s) {
+      long seconds = strtol(s, nullptr, 10);
+      if (seconds > 0 && seconds <= 120) return (uint32_t)seconds * 1000;
+    }
+    return 12000;
+  }
+  void gifRelease() {
+    if (_emu_gif_buffer) {
+      free(_emu_gif_buffer);
+      _emu_gif_buffer = nullptr;
+    }
+    _emu_gif_length = 0;
+  }
 };
 

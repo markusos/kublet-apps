@@ -1,5 +1,6 @@
 """Paths, constants, and shared helpers for the Kublet dev tool."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,10 @@ ENV_FILE = TOOLS_DIR / ".env"
 DEVICES_FILE = TOOLS_DIR / ".devices.yml"
 NVS_CSV = TOOLS_DIR / "nvs_wifi.csv"
 NVS_BIN = TOOLS_DIR / "nvs_wifi.bin"
+
+# GIFs that ./tools/dev gif can push, kept outside the repo so the library can
+# grow without adding binaries to git. ./tools/gifpack writes here too.
+GIF_LIBRARY = Path(os.environ.get("GIF_LIBRARY", Path.home() / "code" / "gifs"))
 
 DEV_FIRMWARE = FIRMWARE_DIR / "dev_firmware.bin"
 DEV_PARTITIONS = FIRMWARE_DIR / "dev_partitions.bin"

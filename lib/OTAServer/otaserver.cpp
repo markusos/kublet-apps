@@ -9,6 +9,14 @@ static unsigned long _otaRestartRequestedAt = 0;
 static const char* CONFIG_NAMESPACE = "app";
 static const unsigned int NVS_KEY_MAX_LENGTH = 15;
 
+/* A GIF pushed to /gif, held until the app plays it */
+static uint8_t* _gifBuffer = nullptr;
+static size_t _gifLength = 0;
+static size_t _gifWritten = 0;
+static uint32_t _gifDurationMs = 12000;
+static bool _gifReady = false;
+static bool _gifOverflow = false;
+
 /***************************************************************************************
 ** Function name:           init
 ** Description:             Initialize OTA server and endpoint
@@ -118,6 +126,94 @@ if (!MDNS.begin("esp32")) { //http://esp32.local
       _otaRestartRequestedAt = millis();
     }
   });
+
+  /* receive a GIF and hold it until the app plays it */
+  server.on("/gif", HTTP_POST, []() {
+    if (_gifOverflow) {
+      server.sendHeader("Connection", "close");
+      server.send(413, "text/plain", "gif too large");
+      return;
+    }
+    if (!_gifBuffer || _gifWritten == 0) {
+      server.sendHeader("Connection", "close");
+      server.send(507, "text/plain", "no memory for gif");
+      return;
+    }
+
+    _gifLength = _gifWritten;
+    _gifReady = true;
+
+    /* seconds=N sets how long the app shows it */
+    if (server.hasArg("seconds")) {
+      long seconds = server.arg("seconds").toInt();
+      if (seconds > 0 && seconds <= 120) {
+        _gifDurationMs = (uint32_t)seconds * 1000;
+      }
+    }
+
+    Serial.printf("Gif: %u bytes ready, showing for %u ms\n",
+                  (unsigned)_gifLength, (unsigned)_gifDurationMs);
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", "OK");
+  }, []() {
+    HTTPUpload& upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+      /* drop anything still waiting, the newest push wins */
+      if (_gifBuffer) {
+        free(_gifBuffer);
+        _gifBuffer = nullptr;
+      }
+      _gifReady = false;
+      _gifOverflow = false;
+      _gifWritten = 0;
+      _gifLength = 0;
+      _gifDurationMs = 12000;
+
+      Serial.printf("Gif: before alloc, heap free %u, largest block %u\n",
+                    (unsigned)ESP.getFreeHeap(),
+                    (unsigned)ESP.getMaxAllocHeap());
+
+      _gifBuffer = (uint8_t*)malloc(OTA_GIF_MAX_BYTES);
+      if (!_gifBuffer) {
+        Serial.printf("Gif: malloc of %u failed\n",
+                      (unsigned)OTA_GIF_MAX_BYTES);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (!_gifBuffer) return;
+      if (_gifWritten + upload.currentSize > OTA_GIF_MAX_BYTES) {
+        _gifOverflow = true;
+        free(_gifBuffer);
+        _gifBuffer = nullptr;
+        Serial.println("Gif: rejected, larger than the buffer");
+        return;
+      }
+      memcpy(_gifBuffer + _gifWritten, upload.buf, upload.currentSize);
+      _gifWritten += upload.currentSize;
+    }
+  });
+}
+
+/***************************************************************************************
+** Function name:           gifReady / gifData / gifLength / gifDurationMs / gifRelease
+** Description:             Access a GIF pushed to /gif
+***************************************************************************************/
+bool OTAServer::gifReady() { return _gifReady && _gifBuffer != nullptr; }
+
+const uint8_t* OTAServer::gifData() { return _gifBuffer; }
+
+size_t OTAServer::gifLength() { return _gifLength; }
+
+uint32_t OTAServer::gifDurationMs() { return _gifDurationMs; }
+
+void OTAServer::gifRelease() {
+  if (_gifBuffer) {
+    free(_gifBuffer);
+    _gifBuffer = nullptr;
+  }
+  _gifReady = false;
+  _gifWritten = 0;
+  _gifLength = 0;
 }
 
 /***************************************************************************************

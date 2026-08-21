@@ -38,8 +38,23 @@ output=$("$CLAUDE_BIN" -p "/usage" 2>/dev/null)
 # Expected lines:
 #   Current session: 4% used · resets Aug 21 at 12:29am (America/New_York)
 #   Current week (all models): 26% used · resets Aug 24 at 9:59am (America/New_York)
-session_pct=$(echo "$output" | grep -oE 'Current session: [0-9]+%' | grep -oE '[0-9]+' | head -1)
-weekly_pct=$(echo "$output" | grep -oE 'Current week \(all models\): [0-9]+%' | grep -oE '[0-9]+' | head -1)
+session_line=$(echo "$output" | grep -m1 'Current session:')
+weekly_line=$(echo "$output" | grep -m1 'Current week (all models):')
+
+# extract "N" from "N% used"
+pct_of() { echo "$1" | grep -oE '[0-9]+% used' | grep -oE '[0-9]+' | head -1; }
+
+# extract "Aug 21 at 12:29am" from "resets Aug 21 at 12:29am (America/New_York)"
+reset_of() { echo "$1" | sed -nE 's/.*resets (.*) \(.*\)$/\1/p' | head -1; }
+
+# extract "America/New_York" from the trailing parentheses
+tz_of() { echo "$1" | sed -nE 's/.*resets .*\((.*)\)$/\1/p' | head -1; }
+
+session_pct=$(pct_of "$session_line")
+weekly_pct=$(pct_of "$weekly_line")
+session_reset=$(reset_of "$session_line")
+weekly_reset=$(reset_of "$weekly_line")
+timezone=$(tz_of "$session_line")
 
 # Fall back to positional parsing if the labels change
 if [ -z "$session_pct" ] || [ -z "$weekly_pct" ]; then
@@ -52,4 +67,5 @@ fi
 session_pct=${session_pct:-0}
 weekly_pct=${weekly_pct:-0}
 
-echo "{\"session\":{\"percent\":${session_pct}},\"weekly\":{\"percent\":${weekly_pct}}}"
+printf '{"session":{"percent":%s,"resets_at":"%s"},"weekly":{"percent":%s,"resets_at":"%s"},"timezone":"%s"}\n' \
+    "$session_pct" "$session_reset" "$weekly_pct" "$weekly_reset" "$timezone"

@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 import serial
 
@@ -137,6 +138,41 @@ def send_config(ip: str, values: dict[str, str], restart: bool = True) -> bool:
             return True
     except urllib.error.HTTPError as e:
         print(f"  ✗ Device rejected the config: HTTP {e.code} {e.read().decode()}")
+        return False
+    except (urllib.error.URLError, OSError) as e:
+        print(f"  ✗ Could not reach {ip}: {e}")
+        return False
+
+
+def send_gif(ip: str, gif: Path, seconds: int, timeout: int = 60) -> bool:
+    """Push a GIF to the device, which plays it and then restores its screen."""
+    data = gif.read_bytes()
+    boundary = "----KubletGif"
+
+    header = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="filedata"; filename="{gif.name}"\r\n'
+        f"Content-Type: image/gif\r\n"
+        f"\r\n"
+    ).encode()
+    footer = f"\r\n--{boundary}--\r\n".encode()
+    body = header + data + footer
+
+    req = urllib.request.Request(
+        f"http://{ip}/gif?seconds={seconds}",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            print(f"  Device replied: {resp.read().decode().strip()}")
+            return True
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode().strip()
+        print(f"  ✗ Device rejected the gif: HTTP {e.code} {detail}")
+        if e.code == 413:
+            print("    Repack it smaller: ./tools/gifpack pack <file> <name>")
         return False
     except (urllib.error.URLError, OSError) as e:
         print(f"  ✗ Could not reach {ip}: {e}")

@@ -3,6 +3,7 @@
 import argparse
 import subprocess
 import sys
+from pathlib import Path
 
 from kublet_dev.build import build_firmware, ota_send, write_user_setup
 from kublet_dev.config import (
@@ -12,6 +13,7 @@ from kublet_dev.config import (
     FACTORY_BOOTLOADER,
     FACTORY_FIRMWARE,
     FACTORY_PARTITIONS,
+    GIF_LIBRARY,
     NVS_BIN,
     REPO_ROOT,
     find_pio,
@@ -28,7 +30,7 @@ from kublet_dev.flash import (
     generate_nvs,
     get_wifi_credentials,
 )
-from kublet_dev.network import read_config, send_config, wait_for_device
+from kublet_dev.network import read_config, send_config, send_gif, wait_for_device
 
 
 # ===========================================================================
@@ -209,6 +211,61 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 
     print()
     ota_send(ip, firmware_bin, app_name)
+
+
+def list_library() -> list[Path]:
+    """Return the GIFs the library holds, sorted by name."""
+    if not GIF_LIBRARY.exists():
+        return []
+    return sorted(GIF_LIBRARY.glob("*.gif"))
+
+
+def resolve_gif(name: str) -> Path:
+    """Find a GIF by library name or by path."""
+    direct = Path(name).expanduser()
+    if direct.is_file():
+        return direct
+
+    stem = name[:-4] if name.lower().endswith(".gif") else name
+    candidate = GIF_LIBRARY / f"{stem}.gif"
+    if candidate.is_file():
+        return candidate
+
+    print(f"Error: no gif named '{name}'.")
+    available = list_library()
+    if available:
+        print(f"  In {GIF_LIBRARY}: {', '.join(p.stem for p in available)}")
+    else:
+        print(f"  {GIF_LIBRARY} is empty. Fill it with './tools/gifpack mascot'.")
+    sys.exit(1)
+
+
+def cmd_gif(args: argparse.Namespace) -> None:
+    """Play a GIF on the device for a few seconds, then let its app return."""
+    # 'gif hello' names a gif, not a device — argparse cannot tell them apart
+    if args.name is None and args.device is not None:
+        if args.device not in load_devices():
+            args.name = args.device
+            args.device = None
+
+    if not args.name:
+        available = list_library()
+        if not available:
+            print(f"{GIF_LIBRARY} is empty. Fill it with './tools/gifpack mascot'.")
+            return
+        print(f"{GIF_LIBRARY}:")
+        for path in available:
+            print(f"  {path.stem:<16} {path.stat().st_size / 1024:>6.0f} KB")
+        return
+
+    ip = resolve_device_ip(getattr(args, "device", None), args.ip)
+    gif = resolve_gif(args.name)
+    size_kb = gif.stat().st_size / 1024
+
+    print(f"🎞  Sending '{gif.stem}' ({size_kb:.0f} KB) to {ip} for {args.seconds}s")
+    if not send_gif(ip, gif, args.seconds):
+        sys.exit(1)
+    print("\n  ✓ Playing. The app returns when the time is up.")
 
 
 def cmd_config(args: argparse.Namespace) -> None:
@@ -410,6 +467,32 @@ examples:
         help="Save the values but do not restart the device",
     )
 
+    # -- gif --
+    p_gif = subparsers.add_parser(
+        "gif",
+        help="Play a GIF on the device for a few seconds",
+    )
+    p_gif.add_argument(
+        "device",
+        nargs="?",
+        help="Device name from registry (default: last initialized device)",
+    )
+    p_gif.add_argument(
+        "name",
+        nargs="?",
+        help="Library name or path to a .gif. Omit to list the library.",
+    )
+    p_gif.add_argument(
+        "--seconds",
+        type=int,
+        default=12,
+        help="How long to show it (default: 12)",
+    )
+    p_gif.add_argument(
+        "--ip",
+        help="Override device IP directly (bypasses registry)",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -423,5 +506,6 @@ examples:
         "devices": cmd_devices,
         "deploy": cmd_deploy,
         "config": cmd_config,
+        "gif": cmd_gif,
     }
     commands[args.command](args)
