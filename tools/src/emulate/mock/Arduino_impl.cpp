@@ -13,6 +13,19 @@ SPIClass SPI;
 // ---------------------------------------------------------------------------
 static uint32_t _start_ticks = 0;
 
+// A screenshot must show the same picture on every machine. With the real
+// clock, an app draws whatever it reached in N wall seconds, so a slower host
+// captures an earlier frame: a maze half carved instead of fully carved. The
+// virtual clock advances only when the app asks time to pass, through delay(),
+// or when the emulator finishes one pass of loop(). The app timeline then no
+// longer depends on host speed.
+static bool _virtual_clock = false;
+static unsigned long _virtual_ms = 0;
+
+void emuUseVirtualClock() { _virtual_clock = true; }
+bool emuVirtualClock() { return _virtual_clock; }
+void emuAdvanceClock(unsigned long ms) { _virtual_ms += ms; }
+
 static void _ensure_sdl() {
   // SDL_Init is idempotent for subsystems already initialized
   if (_start_ticks == 0) {
@@ -21,6 +34,7 @@ static void _ensure_sdl() {
 }
 
 unsigned long millis() {
+  if (_virtual_clock) return _virtual_ms;
   _ensure_sdl();
   return SDL_GetTicks() - _start_ticks;
 }
@@ -46,6 +60,14 @@ void yield() {
 extern void _emu_pump_events();
 
 void delay(unsigned long ms) {
+  if (_virtual_clock) {
+    // Time passes for the app, not for the host. Every wait inside a read loop
+    // still reaches its timeout, and the run finishes as fast as it computes.
+    _virtual_ms += ms;
+    _emu_pump_events();
+    yield();
+    return;
+  }
   if (ms == 0) { yield(); return; }
   unsigned long end = SDL_GetTicks() + ms;
   while (SDL_GetTicks() < end) {
@@ -94,16 +116,41 @@ void _emu_set_button_state(bool pressed) {
 // ---------------------------------------------------------------------------
 // Random
 // ---------------------------------------------------------------------------
+// The mock keeps its own generator state. The libc rand() state is shared with
+// every other part of the process, including SDL and the notification listener
+// thread, so an app that seeds from it drew a different colour or a different
+// maze in about one run in four.
+//
+// A screenshot run starts from a fixed seed, so the captured frame is the same
+// every time. An interactive run seeds from the clock, so a demo app still
+// shows something new on each start.
+static uint32_t _rng_state = 0;  // 0 means not seeded yet
+
+static uint32_t _next_random() {
+  if (_rng_state == 0) {
+    _rng_state = _virtual_clock ? 1u : (uint32_t)time(nullptr);
+    if (_rng_state == 0) _rng_state = 1;
+  }
+  // xorshift32
+  _rng_state ^= _rng_state << 13;
+  _rng_state ^= _rng_state >> 17;
+  _rng_state ^= _rng_state << 5;
+  return _rng_state;
+}
+
+uint32_t esp_random() { return _next_random(); }
+
 long random(long max) {
   if (max <= 0) return 0;
-  return rand() % max;
+  return (long)(_next_random() % (uint32_t)max);
 }
 
 long random(long min, long max) {
   if (min >= max) return min;
-  return min + rand() % (max - min);
+  return min + (long)(_next_random() % (uint32_t)(max - min));
 }
 
 void randomSeed(unsigned long seed) {
-  srand((unsigned int)seed);
+  _rng_state = (uint32_t)seed;
+  if (_rng_state == 0) _rng_state = 1;
 }

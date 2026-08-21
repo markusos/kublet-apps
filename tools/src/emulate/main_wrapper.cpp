@@ -30,9 +30,16 @@ static SDL_Texture*  g_texture  = nullptr;
 static int g_scale = 2;
 static bool g_running = true;
 
-// All timing is wall-clock milliseconds relative to loop start
-static uint32_t g_loop_start_ticks = 0;
-static uint32_t emu_elapsed() { return SDL_GetTicks() - g_loop_start_ticks; }
+// All timing is milliseconds relative to loop start. millis() reads the wall
+// clock, except while capturing a screenshot, where it runs on the virtual
+// clock so the captured frame is the same on every machine.
+static bool g_loop_started = false;
+static uint32_t g_loop_start_ms = 0;
+static uint32_t emu_elapsed() { return (uint32_t)millis() - g_loop_start_ms; }
+
+// Virtual milliseconds added after each pass of loop(), so time still moves
+// for an app that never calls delay().
+static const uint32_t EMU_TICK_MS = 5;
 
 // Screenshot: --screenshot PATH --after SECONDS (default 2s)
 static const char* g_screenshot_path = nullptr;
@@ -65,7 +72,7 @@ static std::vector<NotifyEvent> g_notify_events;
 
 // Called from digitalRead to check if a scripted button press is active
 bool _emu_scripted_button_active() {
-  if (g_loop_start_ticks == 0) return false;
+  if (!g_loop_started) return false;
   uint32_t now = emu_elapsed();
   for (int i = 0; i < g_button_event_count; i++) {
     uint32_t start = g_button_events[i].start_ms;
@@ -126,7 +133,7 @@ void _emu_yield_frame() {
   SDL_RenderPresent(g_renderer);
 
   // GIF frame capture during yield (for animated GIF apps)
-  if (g_gif_path && g_gif_frame_dir && g_loop_start_ticks > 0) {
+  if (g_gif_path && g_gif_frame_dir && g_loop_started) {
     uint32_t elapsed = emu_elapsed();
     uint32_t capture_end = g_gif_start_ms + g_gif_duration_ms;
     if (elapsed >= g_gif_start_ms && elapsed < capture_end) {
@@ -327,6 +334,10 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // A screenshot has to be reproducible, so it runs on the virtual clock. A
+  // GIF records how the app looks over real time, so it keeps the wall clock.
+  if (g_screenshot_path && !g_gif_path) emuUseVirtualClock();
+
   // Run app setup
   setup();
 
@@ -338,7 +349,8 @@ int main(int argc, char* argv[]) {
   uint8_t* rgb_buf = new uint8_t[240 * 240 * 3];
 
   // Record loop start time (all timing is relative to this)
-  g_loop_start_ticks = SDL_GetTicks();
+  g_loop_start_ms = (uint32_t)millis();
+  g_loop_started = true;
 
   // Main loop
   static bool s_key_was_down = false;
@@ -373,6 +385,7 @@ int main(int argc, char* argv[]) {
     // Run one iteration of the app loop
     g_yield_rendered = false;
     loop();
+    if (emuVirtualClock()) emuAdvanceClock(EMU_TICK_MS);
 
     // Render framebuffer to screen (skip if yield() already rendered)
     if (!g_yield_rendered && g_display) {
