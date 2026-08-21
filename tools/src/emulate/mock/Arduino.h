@@ -144,6 +144,11 @@ void delay(unsigned long ms);
 void delayMicroseconds(unsigned int us);
 void yield();
 
+// Deterministic clock, used while capturing a screenshot. See Arduino_impl.cpp.
+void emuUseVirtualClock();
+bool emuVirtualClock();
+void emuAdvanceClock(unsigned long ms);
+
 // ---------------------------------------------------------------------------
 // GPIO — digitalRead returns keyboard state for button pin
 // ---------------------------------------------------------------------------
@@ -162,7 +167,7 @@ long random(long max);
 long random(long min, long max);
 void randomSeed(unsigned long seed);
 
-inline uint32_t esp_random() { return (uint32_t)rand(); }
+uint32_t esp_random();
 
 // ---------------------------------------------------------------------------
 // Math helpers

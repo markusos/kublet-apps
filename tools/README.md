@@ -62,13 +62,23 @@ Runs an app in a desktop emulator using SDL2. Compiles the app's `main.cpp` agai
 |---|---|
 | `--scale N` | Window scale factor (default: 2) |
 | `--screenshot PATH` | Capture a screenshot and exit |
-| `--after SECONDS` | Delay before screenshot (default: 2) |
+| `--after SECONDS` | App time before the screenshot (default: 2) |
 | `--gif PATH` | Capture an animated GIF and exit |
 | `--gif-start SECONDS` | Delay before GIF capture starts (default: 1) |
 | `--gif-duration SECONDS` | Duration to capture (default: 4) |
 | `--gif-fps N` | Capture framerate (default: 10) |
 | `--button-at SPEC` | Scripted button presses: `seconds[:duration_ms],...` |
 | `--notify-at SPEC` | Scripted notifications: `seconds:source:sender:text,...` |
+
+**Screenshot mode runs on a virtual clock.** `millis()` advances 5 ms after each
+pass of `loop()`, plus whatever the app passes to `delay()`. The host never
+sleeps, so the run ends as soon as it computes `--after` seconds of app time,
+and the captured frame is the same on every machine. Random numbers start from
+a fixed seed in this mode, so an app that calls `random()` also draws the same
+picture every time. Screenshot regression tests depend on both.
+
+Every other mode keeps the wall clock, including GIF capture, which records how
+the app looks over real time.
 
 **Keyboard shortcuts:**
 
