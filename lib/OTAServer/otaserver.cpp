@@ -5,6 +5,10 @@ WebServer server(80);
 static volatile bool _otaPendingRestart = false;
 static unsigned long _otaRestartRequestedAt = 0;
 
+/* NVS namespace that apps read their config from, and the NVS key size limit */
+static const char* CONFIG_NAMESPACE = "app";
+static const unsigned int NVS_KEY_MAX_LENGTH = 15;
+
 /***************************************************************************************
 ** Function name:           init
 ** Description:             Initialize OTA server and endpoint
@@ -61,6 +65,57 @@ if (!MDNS.begin("esp32")) { //http://esp32.local
         Serial.println("OTA: Update FAILED (possible MD5 mismatch or write error)");
         Update.printError(Serial);
       }
+    }
+  });
+
+  /* read the app config, so a client can verify what the device stores */
+  server.on("/config", HTTP_GET, []() {
+    pref.begin(CONFIG_NAMESPACE, true);
+    String serverUrl = pref.getString("server_url", "");
+    pref.end();
+    server.send(200, "application/json", "{\"server_url\":\"" + serverUrl + "\"}");
+  });
+
+  /* write the app config over WiFi, so a USB re-init is not needed */
+  server.on("/config", HTTP_POST, []() {
+    int written = 0;
+    int skipped = 0;
+    bool restart = true;
+
+    pref.begin(CONFIG_NAMESPACE, false);
+    for (int i = 0; i < server.args(); i++) {
+      String key = server.argName(i);
+      String value = server.arg(i);
+
+      if (key == "restart") {
+        restart = !(value == "0" || value == "false");
+        continue;
+      }
+      if (key.length() == 0 || key.length() > NVS_KEY_MAX_LENGTH) {
+        Serial.printf("Config: skipped invalid key '%s'\n", key.c_str());
+        skipped++;
+        continue;
+      }
+
+      pref.putString(key.c_str(), value);
+      Serial.printf("Config: %s = %s\n", key.c_str(), value.c_str());
+      written++;
+    }
+    pref.end();
+
+    server.sendHeader("Connection", "close");
+    if (written == 0) {
+      server.send(400, "text/plain", "no valid keys");
+      return;
+    }
+
+    Serial.printf("Config: wrote %d key(s), skipped %d\n", written, skipped);
+    server.send(200, "text/plain", restart ? "OK restarting" : "OK");
+
+    /* apps read NVS in setup(), so a restart applies the new values */
+    if (restart) {
+      _otaPendingRestart = true;
+      _otaRestartRequestedAt = millis();
     }
   });
 }

@@ -17,6 +17,7 @@ CLI tools for building, flashing, deploying, and emulating Kublet ESP32 apps.
 |---|---|
 | `build <app>` | Build/compile firmware for an app |
 | `deploy <app>` | Build and OTA-deploy to a device |
+| `config <device> [key=value...]` | Read or write device app config over WiFi |
 | `init <app>` | Flash dev firmware with WiFi credentials via USB |
 | `logs` | Stream serial logs from the Kublet via USB |
 | `devices` | List registered devices |
@@ -27,6 +28,25 @@ CLI tools for building, flashing, deploying, and emulating Kublet ESP32 apps.
 ./tools/dev init music         # flash via USB with WiFi setup
 ./tools/dev logs               # stream serial output
 ```
+
+**Config over WiFi**
+
+`init` writes `server_url` into NVS over USB. When your machine gets a new DHCP
+address, that stored value goes stale and server-backed apps (`claude-usage`,
+`music`, `notice`) stop reaching the server. Fix it without USB:
+
+```bash
+./tools/dev config kitchen                    # show what the device stores
+./tools/dev config kitchen server_url=auto    # point it at this machine
+./tools/dev config kitchen server_url=http://192.168.1.50:8198
+./tools/dev config kitchen a=b --no-restart   # save without restarting
+```
+
+`server_url=auto` fills in this machine's current IP on port 8198. The device
+restarts after a write, because apps read NVS in `setup()`.
+
+This needs firmware built with OTAServer 1.2.0 or later. Deploy any app once to
+update the device, then the command works.
 
 ### `./tools/emulate`
 

@@ -1,9 +1,11 @@
 """Device connectivity — serial IP reading, ping, mDNS, OTA health check."""
 
+import json
 import re
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import serial
@@ -100,6 +102,44 @@ def check_ota_endpoint(ip: str) -> bool:
     except urllib.error.HTTPError:
         return True  # server responded with an error code — still alive
     except (urllib.error.URLError, OSError):
+        return False
+
+
+def read_config(ip: str, timeout: int = 10) -> dict[str, str] | None:
+    """Read the app config that the device stores in NVS."""
+    try:
+        with urllib.request.urlopen(f"http://{ip}/config", timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def send_config(ip: str, values: dict[str, str], restart: bool = True) -> bool:
+    """Write app config to the device over WiFi and return True on success.
+
+    The device stores each key in the NVS 'app' namespace. Apps read that
+    namespace in setup(), so the device restarts to apply the new values.
+    """
+    params = dict(values)
+    if not restart:
+        params["restart"] = "0"
+    body = urllib.parse.urlencode(params).encode()
+
+    req = urllib.request.Request(
+        f"http://{ip}/config",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"  Device replied: {resp.read().decode().strip()}")
+            return True
+    except urllib.error.HTTPError as e:
+        print(f"  ✗ Device rejected the config: HTTP {e.code} {e.read().decode()}")
+        return False
+    except (urllib.error.URLError, OSError) as e:
+        print(f"  ✗ Could not reach {ip}: {e}")
         return False
 
 

@@ -28,7 +28,7 @@ from kublet_dev.flash import (
     generate_nvs,
     get_wifi_credentials,
 )
-from kublet_dev.network import wait_for_device
+from kublet_dev.network import read_config, send_config, wait_for_device
 
 
 # ===========================================================================
@@ -211,6 +211,64 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     ota_send(ip, firmware_bin, app_name)
 
 
+def cmd_config(args: argparse.Namespace) -> None:
+    """Read or write the device app config over WiFi."""
+    device = getattr(args, "device", None)
+    values_args = list(args.values)
+
+    # 'config server_url=x' has no device name, so argparse puts the pair in device
+    if device and "=" in device:
+        values_args.insert(0, device)
+        device = None
+
+    ip = resolve_device_ip(device, args.ip)
+    args.values = values_args
+
+    if not args.values:
+        current = read_config(ip)
+        if current is None:
+            print(f"Error: no config endpoint at http://{ip}/config")
+            print("  The device runs firmware built before OTAServer 1.2.0.")
+            print("  Deploy an app once to update it, then run this command again.")
+            sys.exit(1)
+        print(f"⚙  Config on {ip}:")
+        for key, value in sorted(current.items()):
+            print(f"  {key:<16} {value or '(empty)'}")
+        return
+
+    values: dict[str, str] = {}
+    for item in args.values:
+        if "=" not in item:
+            print(f"Error: '{item}' is not in key=value form.")
+            sys.exit(1)
+        key, _, value = item.partition("=")
+        key = key.strip()
+        if not key:
+            print(f"Error: '{item}' has an empty key.")
+            sys.exit(1)
+        values[key] = value.strip()
+
+    if "server_url" in values and values["server_url"] == "auto":
+        local_ip = get_local_ip()
+        if not local_ip:
+            print("Error: could not detect this machine's IP for 'auto'.")
+            sys.exit(1)
+        values["server_url"] = f"http://{local_ip}:8198"
+        print(f"  Resolved server_url=auto to {values['server_url']}")
+
+    print(f"⚙  Writing config to {ip}...")
+    for key, value in values.items():
+        print(f"  {key} = {value}")
+
+    if not send_config(ip, values, restart=not args.no_restart):
+        sys.exit(1)
+
+    if args.no_restart:
+        print("\n  ✓ Saved. The device applies the values after the next restart.")
+    else:
+        print("\n  ✓ Saved. The device is restarting.")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -225,6 +283,7 @@ def main():
 commands:
   build    Compile firmware for an app
   deploy   Build and send an app to a device over WiFi
+  config   Read or write device app config over WiFi
   devices  List registered Kublet devices
   logs     Stream serial logs from the Kublet via USB
   init     Flash dev firmware + WiFi credentials via USB
@@ -235,6 +294,8 @@ examples:
   ./tools/dev deploy stock                    # deploy to default device
   ./tools/dev deploy stock kitchen            # deploy to "kitchen"
   ./tools/dev deploy stock --ip 192.168.1.50  # override with explicit IP
+  ./tools/dev config kitchen                  # show config stored on "kitchen"
+  ./tools/dev config kitchen server_url=auto  # point it at this machine
   ./tools/dev devices                         # list registered devices
   ./tools/dev logs                            # stream logs (auto-detect port)
         """,
@@ -323,6 +384,32 @@ examples:
         help="Skip the build step and only send the existing firmware",
     )
 
+    # -- config --
+    p_config = subparsers.add_parser(
+        "config",
+        help="Read or write device app config over WiFi (no USB needed)",
+    )
+    p_config.add_argument(
+        "device",
+        nargs="?",
+        help="Device name from registry (default: last initialized device)",
+    )
+    p_config.add_argument(
+        "values",
+        nargs="*",
+        help="key=value pairs to write. Omit to read the current config. "
+        "Use server_url=auto to point the device at this machine.",
+    )
+    p_config.add_argument(
+        "--ip",
+        help="Override device IP directly (bypasses registry)",
+    )
+    p_config.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Save the values but do not restart the device",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -335,5 +422,6 @@ examples:
         "logs": cmd_logs,
         "devices": cmd_devices,
         "deploy": cmd_deploy,
+        "config": cmd_config,
     }
     commands[args.command](args)

@@ -102,7 +102,8 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data).encode())
 
     def log_message(self, format, *args):
-        log(format % args)
+        # include the client IP, so you can see which device called
+        log(f"{self.client_address[0]} {format % args}")
 
 
 def main():

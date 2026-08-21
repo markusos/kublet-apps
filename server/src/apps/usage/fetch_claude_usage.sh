@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # fetch_claude_usage.sh — Fetch Claude Code session and weekly usage percentages.
 #
-# Launches `claude /usage` via expect, captures CLI output, and extracts
-# session and weekly usage percentages by parsing ANSI-stripped text.
+# Runs `claude -p /usage` in print mode and parses the plain-text output.
+# Print mode needs no TTY and shows no folder-trust prompt, so the script
+# works from any working directory, including one Claude Code has not seen.
 #
 # Requirements:
-#   - expect (usually pre-installed on macOS, `apt install expect` on Linux)
-#   - perl (for ANSI stripping)
 #   - claude CLI binary
 #
 # Environment variables:
@@ -31,37 +30,25 @@ else
     exit 1
 fi
 
-TMPFILE=$(mktemp /tmp/claude_usage.XXXXXX)
-
 export CLAUDECODE=
 
-# Pass /usage as the initial command — skips welcome screen, much faster
-/usr/bin/expect -c "
-set timeout 10
-log_file -noappend \"$TMPFILE\"
-spawn \"$CLAUDE_BIN\" \"/usage\"
-# Wait for Extra usage section which appears after both percentages
-expect {Extra}
-# Data captured, kill immediately
-set pid [exp_pid]
-exec kill \$pid
-" >/dev/null
+# Print mode writes the usage report to stdout and exits
+output=$("$CLAUDE_BIN" -p "/usage" 2>/dev/null)
 
-# Strip ANSI escape sequences and parse percentages
-pcts=$(perl -pe '
-    s/\e\[[0-9;?]*[a-zA-Z]/ /g;
-    s/\e\][^\a\e]*(?:\a|\e\\)//g;
-    s/\e[^\[].//g;
-    s/[\x00-\x09\x0b-\x1f]//g;
-    s/ +/ /g;
-' "$TMPFILE" | grep -oE '[0-9]+% used' | head -2)
+# Expected lines:
+#   Current session: 4% used · resets Aug 21 at 12:29am (America/New_York)
+#   Current week (all models): 26% used · resets Aug 24 at 9:59am (America/New_York)
+session_pct=$(echo "$output" | grep -oE 'Current session: [0-9]+%' | grep -oE '[0-9]+' | head -1)
+weekly_pct=$(echo "$output" | grep -oE 'Current week \(all models\): [0-9]+%' | grep -oE '[0-9]+' | head -1)
 
-session_pct=$(echo "$pcts" | sed -n '1s/% used//p')
-weekly_pct=$(echo "$pcts" | sed -n '2s/% used//p')
+# Fall back to positional parsing if the labels change
+if [ -z "$session_pct" ] || [ -z "$weekly_pct" ]; then
+    pcts=$(echo "$output" | grep -oE '[0-9]+% used' | head -2)
+    session_pct=${session_pct:-$(echo "$pcts" | sed -n '1s/% used//p')}
+    weekly_pct=${weekly_pct:-$(echo "$pcts" | sed -n '2s/% used//p')}
+fi
 
-rm -f "$TMPFILE"
-
-# Fallback if parsing failed
+# Fall back to 0 if parsing failed
 session_pct=${session_pct:-0}
 weekly_pct=${weekly_pct:-0}
 
