@@ -19,10 +19,14 @@ Requires a `server_url` configured during `./tools/dev init`. The server must ex
 
 ```json
 {
-  "session": { "percent": 45 },
-  "weekly": { "percent": 62 }
+  "session": { "percent": 45, "resets_in": 12274 },
+  "weekly": { "percent": 62, "resets_in": 305674 }
 }
 ```
+
+`percent` runs from 0 to 100. `resets_in` counts the seconds until the window
+resets, and the device counts it down between fetches. A `resets_in` of 0 shows
+as `now`.
 
 The URL is stored in NVS preferences and auto-detected from your local IP during init (e.g. `http://192.168.1.100:8198`).
 

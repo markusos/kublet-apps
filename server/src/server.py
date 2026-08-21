@@ -13,7 +13,6 @@ Adding a new app:
 
 Environment variables:
   PORT       — Server port (default: 8198)
-  CLAUDE_BIN — Path to claude binary (used by fetch_claude_usage.sh)
 
 Usage:
   python server.py

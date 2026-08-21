@@ -64,6 +64,7 @@ static const int WEEKLY_STOPS = sizeof(WEEKLY_RAMP) / sizeof(WEEKLY_RAMP[0]);
 #define COL_BG TFT_BLACK
 #define COL_TRACK 0x18E3  // dim slate, the unfilled part of a ring
 #define COL_LABEL 0x8410  // grey text
+#define COL_STALE 0xFDE5  // amber, the label colour after a failed fetch
 
 // ---------------------------------------------------------------------------
 // State
@@ -92,6 +93,11 @@ unsigned long lastFetch = 0;
 unsigned long lastClockTick = 0;
 unsigned long resetBase = 0;  // millis() when the countdowns were last refreshed
 bool haveData = false;
+
+// The countdowns keep running between fetches, so a dead server still looks
+// plausible. These track the last fetch, and colour the label when it failed.
+bool fetchFailed = false;
+bool drawnFetchFailed = false;
 
 int refreshTimeInSeconds = 300;
 
@@ -309,6 +315,17 @@ void drawStatic() {
   ui.tft.drawFastVLine(120, 218, 20, COL_TRACK);
 }
 
+// The label doubles as a health light. It turns amber while fetches fail, so
+// counted-down values cannot pass for fresh ones. The text keeps its width and
+// position, and drawCentered paints the background behind each glyph, so this
+// needs no clear.
+void drawFetchState() {
+  if (fetchFailed == drawnFetchFailed) return;
+  ui.drawCentered("RESETS IN", Arial_11, fetchFailed ? COL_STALE : COL_LABEL, 200,
+                  COL_BG, 0);
+  drawnFetchFailed = fetchFailed;
+}
+
 // ---------------------------------------------------------------------------
 // Animation
 // ---------------------------------------------------------------------------
@@ -368,6 +385,8 @@ void stepPulse() {
 // makes the return from a GIF read as a deliberate transition.
 void restoreMetrics() {
   drawStatic();
+  drawnFetchFailed = false;  // drawStatic painted the label grey again
+  drawFetchState();
   shownSession = 0.0f;
   shownWeekly = 0.0f;
   drawnSessionText = -1;
@@ -447,11 +466,15 @@ void playPushedGif() {
 // ---------------------------------------------------------------------------
 void fetchUsageData() {
   if (serverUrl.length() == 0) {
+    Serial.println("Usage: no server_url stored, run ./tools/dev config");
+    fetchFailed = true;
+    drawFetchState();
     return;
   }
 
   http.begin(serverUrl + "/api/usage");
   int httpResponseCode = http.GET();
+  bool ok = false;
 
   if (httpResponseCode == HTTP_CODE_OK) {
     String payload = http.getString();
@@ -463,11 +486,19 @@ void fetchUsageData() {
       weeklyResetIn = (long)(json["weekly"]["resets_in"] | 0);
       resetBase = millis();
       haveData = true;
+      ok = true;
       startAnimation();
+    } else {
+      Serial.printf("Usage: bad JSON, %s\n", error.c_str());
     }
+  } else {
+    Serial.printf("Usage: HTTP %d\n", httpResponseCode);
   }
 
   http.end();
+
+  fetchFailed = !ok;
+  drawFetchState();
 }
 
 // ---------------------------------------------------------------------------
