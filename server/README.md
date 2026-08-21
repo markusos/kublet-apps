@@ -14,7 +14,7 @@ The server runs on port 8198 by default (override with `PORT` env var).
 
 | Endpoint | App | Description |
 |---|---|---|
-| `GET /api/usage` | usage | Claude Code session/weekly usage percentages |
+| `GET /api/usage` | usage | Claude Code 5-hour and 7-day rate-limit windows |
 | `GET /api/music` | music | Now-playing track info from Music.app |
 | `GET /api/music/artwork` | music | 240x240 JPEG album artwork for current track |
 | `GET /api/notice/register` | notice | Device self-registration (`?ip=X`) |
@@ -35,8 +35,7 @@ server/
         │   └── tracks.py        # Track info, artwork extraction
         ├── usage/
         │   ├── __init__.py      # ROUTES
-        │   ├── claude.py        # Claude Code usage fetching
-        │   └── fetch_claude_usage.sh
+        │   └── claude.py        # Claude Code rate-limit windows
         └── notice/
             ├── __init__.py      # ROUTES + register()
             ├── hub.py           # Push logic, device registry
@@ -91,13 +90,27 @@ Return values:
 ## Environment Variables
 
 - `PORT` — Server port (default: 8198)
-- `CLAUDE_BIN` — Path to claude binary (used by `fetch_claude_usage.sh`)
 
 ## Usage App
 
-`fetch_claude_usage.sh` runs `claude -p /usage` in print mode and parses the
-plain-text report. Print mode needs no TTY and shows no folder-trust prompt, so
-it works from any working directory.
+`claude.py` reads `~/.claude/kublet-usage.json`. Claude Code sends the
+rate-limit windows to the statusline command on stdin, and `~/.claude/statusline.sh`
+writes them to that file on every render:
+
+```bash
+KUBLET_USAGE="$HOME/.claude/kublet-usage.json"
+printf '%s' "$input" | jq -ce '{rate_limits, updated_at: (now|floor)} | select(.rate_limits)' > "$KUBLET_USAGE"
+```
+
+`rate_limits.five_hour` becomes `session`, and `rate_limits.seven_day` becomes
+`weekly`. The file refreshes only while a Claude Code session renders a status
+line, so the percentages hold their last value when no session runs. A window
+whose `resets_at` already passed reports 0%, because the stale percentage no
+longer describes the current window.
+
+The earlier source was `claude -p /usage`. Print mode stopped writing the usage
+report, so the text parser always read 0% and the device showed `now` for every
+countdown.
 
 ## Devices Cannot Reach the Server
 

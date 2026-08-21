@@ -1,84 +1,79 @@
-"""Claude Code usage endpoint."""
+"""Claude Code usage endpoint.
+
+Claude Code sends the rate-limit windows to the statusline command on stdin.
+`~/.claude/statusline.sh` writes them to `_USAGE_FILE`, and this module reads
+that file.
+
+The earlier source was `claude -p /usage`. Print mode no longer writes the
+usage report, so the text parser always read 0%. The statusline JSON gives the
+same two windows as structured data, and it costs no tokens.
+"""
 
 import json
-import os
-import subprocess
-from datetime import datetime
+import time
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-_DIR = Path(__file__).parent
-
-# "Aug 21 at 12:30am" and "Aug 24 at 10am" both occur
-_RESET_FORMATS = ("%b %d at %I:%M%p", "%b %d at %I%p")
-
-_EMPTY = {
-    "session": {"percent": 0, "resets_at": "", "resets_in": 0},
-    "weekly": {"percent": 0, "resets_at": "", "resets_in": 0},
-    "timezone": "",
-}
+_USAGE_FILE = Path.home() / ".claude" / "kublet-usage.json"
 
 
-def _parse_reset(text: str, timezone: str) -> int:
-    """Return seconds until the reset time, or 0 when it cannot be read.
+def _empty() -> dict:
+    return {
+        "session": {"percent": 0, "resets_at": 0, "resets_in": 0},
+        "weekly": {"percent": 0, "resets_at": 0, "resets_in": 0},
+        "updated_at": 0,
+    }
 
-    The CLI prints no year, so this assumes the next occurrence: it takes the
-    current year first, and adds one year when that date already passed.
+
+def _window(entry: dict, now: int) -> dict:
+    """Convert one statusline rate-limit window into the device payload.
+
+    A window whose reset time already passed rolled over after the last
+    statusline render. The percentage in the file is then stale, so this
+    reports an empty window instead.
     """
-    if not text:
-        return 0
-
     try:
-        tz = ZoneInfo(timezone) if timezone else None
-    except (ZoneInfoNotFoundError, ValueError):
-        tz = None
+        percent = int(round(float(entry.get("used_percentage") or 0)))
+        resets_at = int(entry.get("resets_at") or 0)
+    except (TypeError, ValueError):
+        return {"percent": 0, "resets_at": 0, "resets_in": 0}
 
-    now = datetime.now(tz)
-    for fmt in _RESET_FORMATS:
-        try:
-            parsed = datetime.strptime(text.strip(), fmt)
-        except ValueError:
-            continue
+    resets_in = resets_at - now
+    if resets_at <= 0 or resets_in <= 0:
+        return {"percent": 0, "resets_at": resets_at, "resets_in": 0}
 
-        target = parsed.replace(year=now.year, tzinfo=tz)
-        if (now - target).total_seconds() > 86400:
-            target = target.replace(year=now.year + 1)
-        return max(0, int((target - now).total_seconds()))
-
-    return 0
+    return {
+        "percent": max(0, min(100, percent)),
+        "resets_at": resets_at,
+        "resets_in": resets_in,
+    }
 
 
 def get_usage_data(log, cached, **_kwargs) -> dict:
-    """Fetch Claude Code usage by running fetch_claude_usage.sh."""
+    """Return the 5-hour and 7-day rate-limit windows for the device."""
 
-    def _fetch():
-        script = _DIR / "fetch_claude_usage.sh"
+    def _read():
         try:
-            result = subprocess.run(
-                [str(script)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                env={**os.environ, "CLAUDECODE": ""},
-            )
-            data = json.loads(result.stdout.strip())
-            timezone = data.get("timezone", "")
+            raw = json.loads(_USAGE_FILE.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            log(f"usage read error: {e}")
+            return _empty()
 
-            for window in ("session", "weekly"):
-                entry = data.setdefault(window, {})
-                entry.setdefault("percent", 0)
-                entry.setdefault("resets_at", "")
-                entry["resets_in"] = _parse_reset(entry["resets_at"], timezone)
+        limits = raw.get("rate_limits") or {}
+        now = int(time.time())
+        data = {
+            "session": _window(limits.get("five_hour") or {}, now),
+            "weekly": _window(limits.get("seven_day") or {}, now),
+            "updated_at": int(raw.get("updated_at") or 0),
+        }
 
-            log(
-                f"usage: session={data['session']['percent']}%"
-                f" (resets in {data['session']['resets_in']}s)"
-                f" weekly={data['weekly']['percent']}%"
-                f" (resets in {data['weekly']['resets_in']}s)"
-            )
-            return data
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError) as e:
-            log(f"usage fetch error: {e}")
-            return dict(_EMPTY)
+        age = now - data["updated_at"] if data["updated_at"] else -1
+        log(
+            f"usage: session={data['session']['percent']}%"
+            f" (resets in {data['session']['resets_in']}s)"
+            f" weekly={data['weekly']['percent']}%"
+            f" (resets in {data['weekly']['resets_in']}s)"
+            f" file age {age}s"
+        )
+        return data
 
-    return cached("usage", 300, _fetch)
+    return cached("usage", 30, _read)
