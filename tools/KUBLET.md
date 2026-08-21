@@ -197,6 +197,32 @@ curl -X POST -F "filedata=@firmware.bin" http://<device-ip>/update
 
 The device IP is assigned by DHCP. You can also try `esp32.local` if mDNS is working on your network.
 
+### Config Endpoint
+
+OTAServer 1.2.0 added `/config`, which reads and writes the NVS `app` namespace over WiFi. Before this, `server_url` could only be set by a USB `init`, so a new DHCP address for your server meant a USB re-flash.
+
+```bash
+# read what the device stores
+curl http://<device-ip>/config
+# {"server_url":"http://192.168.1.231:8198"}
+
+# write a value (form-encoded body)
+curl -X POST -d "server_url=http://192.168.1.231:8198" http://<device-ip>/config
+# OK restarting
+
+# write without restarting
+curl -X POST -d "server_url=http://x:8198" -d "restart=0" http://<device-ip>/config
+
+# same thing through the dev tool
+./tools/dev config <device> server_url=auto
+```
+
+Notes:
+
+1. The device restarts after a write, because apps read NVS in `setup()`. Pass `restart=0` to skip the restart.
+2. NVS keys are limited to 15 characters. The device skips a longer key and reports the count in its serial log.
+3. `GET /config` reports `server_url` only. WiFi credentials live in the `core` namespace and are never returned.
+
 ---
 
 ## NVS (Non-Volatile Storage)
@@ -208,7 +234,7 @@ WiFi credentials are stored in NVS at partition offset `0x9000` (20 KB):
 | `core`    | `ssid` | string | WiFi SSID        |
 | `core`    | `pw`   | string | WiFi password    |
 
-App-specific configuration uses the `app` namespace.
+App-specific configuration uses the `app` namespace. `./tools/dev init` writes `server_url` there. From OTAServer 1.2.0 you can also write that namespace over WiFi through [`/config`](#config-endpoint), with no USB cable.
 
 ### Generating NVS Binaries
 
@@ -369,3 +395,5 @@ Note: the factory firmware does NOT include WiFi OTA, so you'll need to run `./t
 6. **The KGFX library.** `kublet/KGFX` is a Kublet-specific graphics helper library. Community apps may or may not use it. The badgers app uses `TFT_eSPI` and `AnimatedGIF` directly.
 
 7. **Button is on GPIO 19.** Active LOW with internal pull-up. Not documented by the manufacturer; determined via GPIO scanning.
+
+8. **`server_url` goes stale when your machine gets a new DHCP address.** The device keeps the value that `init` wrote, so a server-backed app silently shows zeros. Read the stored value with `./tools/dev config <device>` and correct it with `./tools/dev config <device> server_url=auto`.

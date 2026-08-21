@@ -44,8 +44,38 @@ void GIFDraw(GIFDRAW *pDraw)
     pDraw->ucHasTransparency = 0;
   }
 
-  // Translate 8-bit pixels through the RGB565 palette
   s = pDraw->pPixels;
+
+  if (pDraw->ucHasTransparency)
+  {
+    // A transparent pixel means "keep what is already on screen", so push only
+    // the runs of opaque pixels. Painting them through the palette instead
+    // would overwrite the previous frame and leave blocks of solid colour.
+    uint8_t ucTransparent = pDraw->ucTransparent;
+    x = 0;
+    while (x < iWidth)
+    {
+      int iStart = x;
+      while (x < iWidth && s[x] != ucTransparent)
+        x++;
+
+      int iRun = x - iStart;
+      if (iRun > 0)
+      {
+        d = usTemp;
+        for (int i = 0; i < iRun; i++)
+          *d++ = usPalette[s[iStart + i]];
+        _tft->setAddrWindow(pDraw->iX + iStart, y, iRun, 1);
+        _tft->pushPixels(usTemp, iRun);
+      }
+
+      while (x < iWidth && s[x] == ucTransparent)
+        x++;
+    }
+    return;
+  }
+
+  // Translate 8-bit pixels through the RGB565 palette
   d = usTemp;
   for (x = 0; x < iWidth; x++)
     *d++ = usPalette[*s++];

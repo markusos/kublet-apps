@@ -1,8 +1,13 @@
 {
   "session": {
-    "percent": 42
+    "percent": 42,
+    "resets_at": "Aug 21 at 12:30am",
+    "resets_in": 12274
   },
   "weekly": {
-    "percent": 67
-  }
+    "percent": 67,
+    "resets_at": "Aug 24 at 10am",
+    "resets_in": 305674
+  },
+  "timezone": "America/New_York"
 }

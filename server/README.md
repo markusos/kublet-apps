@@ -93,6 +93,26 @@ Return values:
 - `PORT` — Server port (default: 8198)
 - `CLAUDE_BIN` — Path to claude binary (used by `fetch_claude_usage.sh`)
 
+## Usage App
+
+`fetch_claude_usage.sh` runs `claude -p /usage` in print mode and parses the
+plain-text report. Print mode needs no TTY and shows no folder-trust prompt, so
+it works from any working directory.
+
+## Devices Cannot Reach the Server
+
+A device reads `server_url` from NVS. `./tools/dev init` writes that value over
+USB, so it goes stale when this machine gets a new DHCP address. The app then
+shows zeros. Check and correct the stored value over WiFi:
+
+```bash
+./tools/dev config <device>                  # show the stored server_url
+./tools/dev config <device> server_url=auto  # point it at this machine
+```
+
+The server log prints the client IP for each request, so you can confirm which
+device called.
+
 ## Notice App
 
 The notice app reads the macOS Notification Center database to capture notifications from all apps (iMessage, Slack, Discord, Mail, etc.) and pushes them to registered Kublet devices.
