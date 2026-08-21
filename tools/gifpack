@@ -76,23 +76,12 @@ def save_frames(frames: list[Image.Image], out: Path, fps: int, max_kb: int) -> 
             # No dithering. Dither noise breaks up flat areas, which costs far
             # more in LZW size than the extra colours are worth: with dithering
             # this clip needed 122 KB for 9 frames, without it 90 KB.
-            # FASTOCTREE, not MEDIANCUT. Median cut assigns palette entries by
-            # how many pixels hold a colour, so small details are merged into
-            # the bulk of the image: at 12 colours the mascot's black eyes
-            # vanished into its body, because they are only a few pixels.
-            # Max coverage keeps them but tints the background, because it
-            # spreads entries across the colour space. The octree keeps both.
-            reference = picked[0].convert("RGB").quantize(
-                colors=colors, method=Image.FASTOCTREE, dither=Image.Dither.NONE
+            first = picked[0].convert("RGB").quantize(
+                colors=colors, method=Image.MEDIANCUT, dither=Image.Dither.NONE
             )
-            # Map every frame through the palette, the first one included.
-            # Quantizing frame 0 directly and matching the rest against its
-            # palette uses two different mappings, and they disagree: the
-            # ground came out as background in frame 0 alone, which flashed
-            # once per loop.
-            quantized = [
-                f.convert("RGB").quantize(palette=reference, dither=Image.Dither.NONE)
-                for f in picked
+            quantized = [first] + [
+                f.convert("RGB").quantize(palette=first, dither=Image.Dither.NONE)
+                for f in picked[1:]
             ]
 
             # Some sources carry a transparency entry that survives the convert
@@ -127,80 +116,6 @@ def save_frames(frames: list[Image.Image], out: Path, fps: int, max_kb: int) -> 
     size_kb = out.stat().st_size / 1024
     print(f"  ! {out.name} is {size_kb:.0f} KB, above the {max_kb} KB limit")
     print("    Shorten it, or lower the frame rate.")
-
-
-def find_ground(frame: Image.Image) -> int | None:
-    """Return the row where the ground begins, or None if no edge is clear.
-
-    The ground is warmer than the background and, unlike the character, it
-    spans the whole width. So this walks up from the bottom while the row stays
-    warm right across, and returns the first row that does. Looking for the
-    largest warmth jump instead finds the character, which is warmer still.
-    """
-    pixels = frame.load()
-
-    def warmth(y: int) -> int:
-        # The median ignores the confetti that lands on the ground. Counting
-        # warm pixels instead lets a few cool specks break the row, which made
-        # each frame detect a different ground line. It also ignores the
-        # character, which is far warmer than the ground it stands on.
-        row = sorted(pixels[x, y][0] - pixels[x, y][2] for x in range(0, SIZE, 4))
-        return row[len(row) // 2]
-
-    # Measure against this clip's own sky. One recording has a strongly tinted
-    # ground and another only a pale one, so no fixed threshold suits both.
-    sky = warmth(4)
-    floor_level = sky + 4
-
-    def warm_across(y: int) -> bool:
-        return warmth(y) >= floor_level
-
-    # Find the lowest warm row first. The ground does not always reach the
-    # bottom edge: one recording has page whitespace below it.
-    y = SIZE - 1
-    while y >= SIZE // 3 and not warm_across(y):
-        y -= 1
-    if y < SIZE // 3:
-        return None
-
-    # then walk up to the top edge of that band
-    while y > SIZE // 3 and warm_across(y - 1):
-        y -= 1
-    return y
-
-
-def align_ground(frames: list[Image.Image], target: int) -> list[Image.Image]:
-    """Shift the whole clip so its ground line sits on the given row.
-
-    One shift for the clip, not one per frame. Detection wobbles by a pixel or
-    two between frames, and correcting each frame separately turns that wobble
-    into visible jitter. Worse, a per-frame shift would cancel the vertical
-    motion the animation intends, such as a jump.
-    """
-    found = [y for y in (find_ground(f) for f in frames) if y is not None]
-    if not found:
-        print("  ! could not find a ground line, leaving the clip where it is")
-        return frames
-
-    found.sort()
-    ground = found[len(found) // 2]  # median, so odd frames cannot skew it
-    offset = target - ground
-    if offset == 0:
-        print(f"  Ground already at y={target}")
-        return frames
-
-    sky = frames[0].getpixel((4, 4))
-    shifted = []
-    for frame in frames:
-        canvas = Image.new("RGB", (SIZE, SIZE), sky)
-        canvas.paste(frame, (0, offset))
-        shifted.append(canvas)
-
-    print(
-        f"  Ground found at y={ground} in {len(found)} of {len(frames)} frames, "
-        f"moved the clip by {offset:+d} to y={target}"
-    )
-    return shifted
 
 
 def fit_square(frame: Image.Image) -> Image.Image:
@@ -296,45 +211,7 @@ def cmd_pack(args: argparse.Namespace) -> None:
         print("Error: no frames found in that file.")
         sys.exit(1)
 
-    # A screen recording often opens or closes on a frame where the page is
-    # still settling. Such a frame flashes on every loop.
-    if args.drop_first or args.drop_last:
-        end = len(frames) - args.drop_last if args.drop_last else len(frames)
-        trimmed = frames[args.drop_first : end]
-        if len(trimmed) < 2:
-            print("  ! that would leave fewer than two frames")
-            sys.exit(1)
-        print(
-            f"  Dropped {args.drop_first} from the start and "
-            f"{args.drop_last} from the end ({len(trimmed)} frames left)"
-        )
-        frames = trimmed
-
     frames = [fit_square(f) for f in frames]
-
-    # Stabilise the horizon first, so the floor fill below lands on a ground
-    # line that no longer moves between frames.
-    if args.align_ground:
-        frames = align_ground(frames, args.align_ground)
-
-    # Paint the ground as one solid block. A recording of a page often leaves
-    # stray animation pixels below the ground line, and a flat block hides them
-    # and compresses better than the speckle it replaces.
-    if args.floor:
-        line = max(0, min(SIZE - 1, args.floor))
-        if args.floor_color:
-            text = args.floor_color.lstrip("#")
-            ground = tuple(int(text[i : i + 2], 16) for i in (0, 2, 4))
-        else:
-            probe = frames[0].crop(
-                (0, min(SIZE - 1, line + 3), SIZE, min(SIZE, line + 4))
-            )
-            counts = probe.getcolors(SIZE * 4) or [(1, (200, 190, 175))]
-            ground = max(counts)[1]
-        print(f"  Ground filled from y={line} with rgb{ground}")
-        for frame in frames:
-            ImageDraw.Draw(frame).rectangle([0, line, SIZE, SIZE], fill=ground)
-
     out = library_path(args.name)
     print(f"Packing {src.name} -> {out}")
     save_frames(frames, out, args.fps, args.max_kb)
@@ -374,313 +251,201 @@ def cmd_extract(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 # mascot
 # ---------------------------------------------------------------------------
-# The figure is anchored so it never drifts: feet on BASE_Y, centred on CX.
-CX = 120.0
-BASE_Y = 192.0
-BODY_W, BODY_H = 118.0, 96.0
-LEG_W, LEG_H = 22.0, 52.0
-HAND_W, HAND_H = 24.0, 36.0
-EYE_W, EYE_H = 18.0, 26.0
+def draw_mascot(
+    draw: ImageDraw.ImageDraw,
+    cx: float,
+    body_top: float,
+    leg_phase: float = 0.0,
+    hand_left: float = 0.0,
+    hand_right: float = 0.0,
+    eye_shift: float = 0.0,
+    lean: float = 0.0,
+    body_color: tuple = CLAY,
+) -> None:
+    """Draw the mascot. Every part is a rectangle, which is how it is built.
 
-# Rendering happens at this multiple and is then reduced, so rotated edges come
-# out smooth instead of stepped.
-SUPERSAMPLE = 4
+    body_top is the y of the body block. leg_phase drives the walk cycle, and
+    hand_left and hand_right lift each hand in pixels.
+    """
+    body_w, body_h = 112, 82
+    bx = cx - body_w / 2 + lean
+    by = body_top
+
+    # Legs first, so the body block overlaps their tops.
+    leg_w, leg_h = 17, 38
+    gap = (body_w - 4 * leg_w) / 3
+    for i in range(4):
+        lift = max(0.0, math.sin(leg_phase + i * math.pi / 2)) * 11
+        lx = bx + i * (leg_w + gap)
+        top = by + body_h - 4
+        draw.rectangle([lx, top, lx + leg_w, top + leg_h - lift], fill=CLAY_DARK)
+
+    # Hands, one block each side.
+    hand_w, hand_h = 20, 30
+    hy = by + 30
+    draw.rectangle(
+        [bx - hand_w - 6, hy - hand_left, bx - 6, hy + hand_h - hand_left],
+        fill=CLAY_DARK,
+    )
+    draw.rectangle(
+        [
+            bx + body_w + 6,
+            hy - hand_right,
+            bx + body_w + 6 + hand_w,
+            hy + hand_h - hand_right,
+        ],
+        fill=CLAY_DARK,
+    )
+
+    # Body block.
+    draw.rectangle([bx, by, bx + body_w, by + body_h], fill=body_color)
+
+    # Eyes shift position rather than change shape.
+    eye_w, eye_h = 15, 22
+    ey = by + 26
+    left = bx + 24 + eye_shift
+    right = bx + body_w - 24 - eye_w + eye_shift
+    draw.rectangle([left, ey, left + eye_w, ey + eye_h], fill=EYE)
+    draw.rectangle([right, ey, right + eye_w, ey + eye_h], fill=EYE)
 
 
 def new_frame() -> tuple:
-    """Return an oversized frame and its drawing context."""
-    frame = Image.new(
-        "RGB", (SIZE * SUPERSAMPLE, SIZE * SUPERSAMPLE), BG
-    )
+    """Return a blank frame and its drawing context."""
+    frame = Image.new("RGB", (SIZE, SIZE), BG)
     return frame, ImageDraw.Draw(frame)
 
 
-def finish(frame: Image.Image) -> Image.Image:
-    """Reduce an oversized frame to the display size."""
-    return frame.resize((SIZE, SIZE), Image.LANCZOS)
-
-
-def block(
-    draw: ImageDraw.ImageDraw,
-    ax: float,
-    ay: float,
-    w: float,
-    h: float,
-    color: tuple,
-    angle: float = 0.0,
-    anchor: str = "top",
-) -> None:
-    """Draw a rectangle, optionally rotated about its top edge or its centre.
-
-    Limbs rotate about the top, which is how a leg swings from the hip.
-    """
-    rad = math.radians(angle)
-    ca, sa = math.cos(rad), math.sin(rad)
-
-    if anchor == "top":
-        corners = [(-w / 2, 0.0), (w / 2, 0.0), (w / 2, h), (-w / 2, h)]
-    else:
-        corners = [
-            (-w / 2, -h / 2),
-            (w / 2, -h / 2),
-            (w / 2, h / 2),
-            (-w / 2, h / 2),
-        ]
-
-    points = []
-    for dx, dy in corners:
-        rx = dx * ca - dy * sa
-        ry = dx * sa + dy * ca
-        points.append(((ax + rx) * SUPERSAMPLE, (ay + ry) * SUPERSAMPLE))
-    draw.polygon(points, fill=color)
-
-
-def draw_mascot(
-    draw: ImageDraw.ImageDraw,
-    lift: float = 0.0,
-    tilt: float = 0.0,
-    leg_swing: tuple = (0.0, 0.0, 0.0, 0.0),
-    leg_stretch: tuple = (1.0, 1.0, 1.0, 1.0),
-    arm_left: float = 0.0,
-    arm_right: float = 0.0,
-    eye_shift: float = 0.0,
-    eye_drop: float = 0.0,
-    body_color: tuple = CLAY,
-) -> None:
-    """Draw the mascot from rectangles.
-
-    lift raises the whole figure, tilt leans the body, leg_swing rotates each
-    leg from its hip and leg_stretch scales its length, and arm_left and
-    arm_right rotate each hand from the shoulder.
-    """
-    hip_y = BASE_Y - LEG_H - lift
-    body_bottom = hip_y + 4
-    body_top = body_bottom - BODY_H
-
-    # Legs, drawn first so the body block covers their tops.
-    gap = (BODY_W - 4 * LEG_W) / 3
-    for i in range(4):
-        hip_x = CX - BODY_W / 2 + LEG_W / 2 + i * (LEG_W + gap)
-        block(
-            draw,
-            hip_x,
-            hip_y,
-            LEG_W,
-            LEG_H * leg_stretch[i],
-            CLAY_DARK,
-            angle=leg_swing[i],
-        )
-
-    # Hands swing from a shoulder on the body edge, so they stay attached when
-    # the arm rotates instead of drifting away from the body.
-    shoulder_y = body_top + 30
-    block(
-        draw,
-        CX - BODY_W / 2 + 3,
-        shoulder_y,
-        HAND_W,
-        HAND_H,
-        CLAY_DARK,
-        angle=arm_left,
-    )
-    block(
-        draw,
-        CX + BODY_W / 2 - 3,
-        shoulder_y,
-        HAND_W,
-        HAND_H,
-        CLAY_DARK,
-        angle=arm_right,
-    )
-
-    # Body block, leaning from its base.
-    block(
-        draw,
-        CX,
-        body_bottom,
-        BODY_W,
-        -BODY_H,
-        body_color,
-        angle=tilt,
-        anchor="top",
-    )
-
-    # Eyes shift position rather than change shape.
-    eye_y = body_top + 22 + eye_drop
-    for side in (-1, 1):
-        ex = CX + side * 23 + eye_shift
-        block(draw, ex, eye_y, EYE_W, EYE_H, EYE, angle=tilt)
-
-
 def make_hello() -> list:
-    """Idle bob, with the eyes looking about."""
+    """The mascot bobs and waves one hand."""
     frames = []
-    count = 24
-    for i in range(count):
-        t = i / count
+    for i in range(24):
+        t = i / 24
         frame, draw = new_frame()
+        wave = max(0.0, math.sin(t * 4 * math.pi)) * 26
         draw_mascot(
             draw,
-            lift=2 + math.sin(t * 2 * math.pi) * 3,
-            tilt=math.sin(t * 2 * math.pi) * 2.5,
+            SIZE / 2,
+            84 + math.sin(t * 2 * math.pi) * 5,
+            hand_right=wave,
             eye_shift=math.sin(t * 2 * math.pi) * 4,
-            arm_left=math.sin(t * 2 * math.pi) * 6,
-            arm_right=-math.sin(t * 2 * math.pi) * 6,
         )
-        frames.append(finish(frame))
-    return frames
-
-
-def make_wave() -> list:
-    """One hand swings up and waves."""
-    frames = []
-    count = 24
-    for i in range(count):
-        t = i / count
-        frame, draw = new_frame()
-        raise_arm = min(1.0, t * 4)
-        wave = math.sin(t * 6 * math.pi) * 22 * raise_arm
-        draw_mascot(
-            draw,
-            lift=1 + math.sin(t * 4 * math.pi) * 2,
-            tilt=-3 * raise_arm,
-            arm_right=-150 * raise_arm + wave,
-            arm_left=8,
-            eye_shift=3,
-        )
-        frames.append(finish(frame))
+        frames.append(frame)
     return frames
 
 
 def make_walk() -> list:
-    """A walk cycle: legs swing from the hip and stretch as they reach."""
+    """A walk cycle in place."""
     frames = []
-    count = 20
-    for i in range(count):
-        t = i / count
+    for i in range(20):
+        t = i / 20
         frame, draw = new_frame()
-        phase = t * 2 * math.pi
-        swings = tuple(math.sin(phase + k * math.pi / 2) * 17 for k in range(4))
-        stretch = tuple(
-            0.88 + 0.16 * (0.5 + 0.5 * math.cos(phase + k * math.pi / 2))
-            for k in range(4)
-        )
         draw_mascot(
             draw,
-            lift=abs(math.sin(phase)) * 4,
-            tilt=math.sin(phase) * 3,
-            leg_swing=swings,
-            leg_stretch=stretch,
-            arm_left=math.sin(phase) * 20,
-            arm_right=-math.sin(phase) * 20,
-            eye_shift=4,
+            SIZE / 2,
+            86 + abs(math.sin(t * 2 * math.pi)) * 6,
+            leg_phase=t * 2 * math.pi,
+            hand_left=math.sin(t * 2 * math.pi) * 8,
+            hand_right=-math.sin(t * 2 * math.pi) * 8,
+            eye_shift=3,
         )
-        frames.append(finish(frame))
+        frames.append(frame)
     return frames
 
 
 def make_thinking() -> list:
-    """Looks around while three blocks fill in turn."""
+    """The mascot looks around while it waits."""
     frames = []
-    count = 24
-    for i in range(count):
-        t = i / count
+    for i in range(24):
+        t = i / 24
         frame, draw = new_frame()
-        look = math.sin(t * 2 * math.pi) * 6
+        look = math.sin(t * 2 * math.pi) * 7
         draw_mascot(
             draw,
-            lift=1,
-            tilt=look * 0.6,
-            arm_left=-40,
+            SIZE / 2,
+            88 + math.sin(t * 4 * math.pi) * 2,
+            hand_left=14 if i % 12 < 6 else 10,
             eye_shift=look,
-            eye_drop=2,
+            lean=look * 0.5,
         )
+        # three blocks that fill up, one per beat
         for d in range(3):
             lit = (i // 4) % 3 == d
-            x = CX - 30 + d * 24
-            size = 13 if lit else 8
+            x = SIZE / 2 - 34 + d * 26
+            y = 204
+            size = 14 if lit else 9
             color = CLAY_LIGHT if lit else CLAY_DARK
-            block(draw, x, 196, size, size, color, anchor="centre")
-        frames.append(finish(frame))
+            draw.rectangle([x, y, x + size, y + size], fill=color)
+        frames.append(frame)
     return frames
 
 
 def make_done() -> list:
-    """A hop, and a tick that draws itself."""
+    """The mascot hops, and a blocky tick builds itself."""
     frames = []
-    count = 24
-    steps = [(92, 194), (101, 203), (110, 212), (121, 199), (132, 186), (143, 173)]
-    for i in range(count):
-        t = i / count
+    # stair-stepped tick, drawn as blocks to match the mascot
+    steps = [(96, 176), (106, 186), (116, 196), (126, 186), (136, 176), (146, 166)]
+    for i in range(24):
+        t = i / 24
         frame, draw = new_frame()
-        hop = 20 * max(0.0, math.sin(min(t * 2.2, 1.0) * math.pi))
-        draw_mascot(
-            draw,
-            lift=hop + 26,
-            tilt=0,
-            arm_left=25,
-            arm_right=-25,
-            leg_stretch=(0.9, 0.9, 0.9, 0.9),
-        )
-        shown = int(max(0.0, (t - 0.30) / 0.45) * len(steps))
-        for x, y in steps[:shown]:
-            block(draw, x, y, 12, 12, (120, 214, 140), anchor="centre")
-        frames.append(finish(frame))
+        hop = -18 * max(0.0, math.sin(min(t * 2.0, 1.0) * math.pi))
+        draw_mascot(draw, SIZE / 2, 62 + hop, hand_left=12, hand_right=12)
+
+        shown = int(max(0.0, (t - 0.3) / 0.45) * len(steps))
+        for x, y in steps[: min(shown, len(steps))]:
+            draw.rectangle([x, y, x + 12, y + 12], fill=(120, 214, 140))
+        frames.append(frame)
     return frames
 
 
 def make_oops() -> list:
-    """A shake, and the body turns amber."""
+    """The mascot shakes and turns amber."""
     frames = []
-    count = 20
-    for i in range(count):
-        t = i / count
+    for i in range(20):
+        t = i / 20
         frame, draw = new_frame()
-        shake = math.sin(t * 8 * math.pi)
+        shake = math.sin(t * 8 * math.pi) * 11
         draw_mascot(
             draw,
-            lift=0,
-            tilt=shake * 9,
-            arm_left=-shake * 16,
-            arm_right=-shake * 16,
-            eye_shift=-shake * 5,
-            eye_drop=3,
+            SIZE / 2 + shake,
+            88,
+            hand_left=-6,
+            hand_right=-6,
+            eye_shift=-shake * 0.4,
             body_color=AMBER,
         )
-        frames.append(finish(frame))
+        frames.append(frame)
     return frames
 
 
 def make_celebrate() -> list:
-    """A bounce under falling confetti blocks."""
+    """The mascot bounces while confetti blocks fall."""
     frames = []
-    count = 24
-    confetti = [(14 + (k * 41) % 214, (k * 57) % 240, k % 4) for k in range(20)]
-    palette = [CLAY_LIGHT, AMBER, (120, 214, 140), (238, 238, 238)]
-    for i in range(count):
-        t = i / count
+    confetti = [
+        (18 + (k * 37) % 210, (k * 53) % 240, k % 4) for k in range(22)
+    ]
+    palette = [CLAY_LIGHT, AMBER, (120, 214, 140), (240, 240, 240)]
+    for i in range(24):
+        t = i / 24
         frame, draw = new_frame()
         for x, y0, tone in confetti:
-            y = (y0 + t * 120) % 264 - 12
+            y = (y0 + t * 240) % 260 - 10
             size = 7 + (tone % 2) * 4
-            block(draw, x, y, size, size, palette[tone], angle=tone * 18,
-                  anchor="centre")
-        bounce = 18 * abs(math.sin(t * 2 * math.pi))
+            draw.rectangle([x, y, x + size, y + size], fill=palette[tone])
+        bounce = -16 * abs(math.sin(t * 2 * math.pi))
         draw_mascot(
             draw,
-            lift=bounce,
-            tilt=math.sin(t * 4 * math.pi) * 4,
-            arm_left=40 + bounce,
-            arm_right=-40 - bounce,
-            leg_stretch=(0.92, 1.0, 1.0, 0.92),
+            SIZE / 2,
+            86 + bounce,
+            hand_left=20 + bounce,
+            hand_right=20 + bounce,
+            leg_phase=t * 4 * math.pi,
         )
-        frames.append(finish(frame))
+        frames.append(frame)
     return frames
 
 
 MASCOTS = {
     "hello": make_hello,
-    "wave": make_wave,
     "walk": make_walk,
     "thinking": make_thinking,
     "done": make_done,
@@ -762,41 +527,6 @@ examples:
     )
     p_pack.add_argument(
         "--seconds", type=float, default=0.0, help="Length to take from a video"
-    )
-    p_pack.add_argument(
-        "--drop-first",
-        type=int,
-        default=0,
-        dest="drop_first",
-        help="Drop this many frames from the start, for a settling first frame",
-    )
-    p_pack.add_argument(
-        "--drop-last",
-        type=int,
-        default=0,
-        dest="drop_last",
-        help="Drop this many frames from the end",
-    )
-    p_pack.add_argument(
-        "--floor",
-        type=int,
-        default=0,
-        help="Fill from this row down with the ground colour, hiding stray pixels",
-    )
-    p_pack.add_argument(
-        "--floor-color",
-        default="",
-        dest="floor_color",
-        help="Ground colour as #RRGGBB. Use the same value across clips so "
-        "their ground matches. Sampled from the clip when omitted.",
-    )
-    p_pack.add_argument(
-        "--align-ground",
-        type=int,
-        default=0,
-        dest="align_ground",
-        help="Shift each frame so the ground line sits on this row. Use the "
-        "same value across clips to give them a common horizon.",
     )
 
     p_extract = subparsers.add_parser(
