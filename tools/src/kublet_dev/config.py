@@ -20,7 +20,7 @@ NVS_CSV = TOOLS_DIR / "nvs_wifi.csv"
 NVS_BIN = TOOLS_DIR / "nvs_wifi.bin"
 
 # GIFs that ./tools/dev gif can push, kept outside the repo so the library can
-# grow without adding binaries to git. ./tools/gifpack writes here too.
+# grow without adding binaries to git. The gifpack script lives there too.
 GIF_LIBRARY = Path(os.environ.get("GIF_LIBRARY", Path.home() / "code" / "gifs"))
 
 DEV_FIRMWARE = FIRMWARE_DIR / "dev_firmware.bin"

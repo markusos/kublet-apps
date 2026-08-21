@@ -236,7 +236,7 @@ def resolve_gif(name: str) -> Path:
     if available:
         print(f"  In {GIF_LIBRARY}: {', '.join(p.stem for p in available)}")
     else:
-        print(f"  {GIF_LIBRARY} is empty. Fill it with './tools/gifpack mascot'.")
+        print(f"  {GIF_LIBRARY} is empty. Fill it with 'gifpack pack <file> <name>'.")
     sys.exit(1)
 
 
@@ -251,7 +251,7 @@ def cmd_gif(args: argparse.Namespace) -> None:
     if not args.name:
         available = list_library()
         if not available:
-            print(f"{GIF_LIBRARY} is empty. Fill it with './tools/gifpack mascot'.")
+            print(f"{GIF_LIBRARY} is empty. Fill it with 'gifpack pack <file> <name>'.")
             return
         print(f"{GIF_LIBRARY}:")
         for path in available:

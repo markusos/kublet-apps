@@ -172,7 +172,7 @@ def send_gif(ip: str, gif: Path, seconds: int, timeout: int = 60) -> bool:
         detail = e.read().decode().strip()
         print(f"  ✗ Device rejected the gif: HTTP {e.code} {detail}")
         if e.code == 413:
-            print("    Repack it smaller: ./tools/gifpack pack <file> <name>")
+            print("    Repack it smaller: gifpack pack <file> <name>")
         return False
     except (urllib.error.URLError, OSError) as e:
         print(f"  ✗ Could not reach {ip}: {e}")
