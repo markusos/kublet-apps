@@ -220,19 +220,37 @@ void drawCalendarIcon(int x, int y, uint16_t color) {
   ui.tft.fillRect(x + 6, y, 2, 4, color);
 }
 
-// Centres text and clears only a narrow box first. KGFX::drawCentered clears the
-// full width of the screen, which would erase both rings on every redraw.
-#define TEXT_BOX_X 62
-#define TEXT_BOX_W 116
+// Both readouts sit inside the weekly ring, so every pixel they touch must stay
+// inside a circle of radius WEEKLY_IR around the centre. Each box is sized for
+// "100%", the widest string a percentage can take, and it never moves. A value
+// that shrinks back to "8%" therefore leaves no residue behind.
+//
+// The boxes below clear the corner furthest from the centre at these radii:
+//   session  58 x 32 -> 66 px, weekly  39 x 32 -> 50 px, both under 70.
+#define SESSION_BOX_X 62   // "100%" in Arial_32_Bold measures 111 px
+#define SESSION_BOX_Y 80
+#define SESSION_BOX_W 116
+#define SESSION_BOX_H 36
+#define SESSION_TEXT_Y 82
 
-void drawCenteredNarrow(const char* text, const tftfont_t& font, uint16_t color,
-                        int y, int clearH) {
+#define WEEKLY_BOX_X 81    // "100%" in Arial_20_Bold measures 73 px
+#define WEEKLY_BOX_Y 120
+#define WEEKLY_BOX_W 78
+#define WEEKLY_BOX_H 24
+#define WEEKLY_TEXT_Y 122
+
+// Clears one box and centres the text in it. The text draws with a transparent
+// background, because an opaque one paints a band as tall as the font line
+// space, 48 pixels for Arial_32_Bold, which reaches both the weekly ring and
+// the weekly number.
+void drawTextBox(const char* text, const tftfont_t& font, uint16_t color,
+                 int boxX, int boxY, int boxW, int boxH, int textY) {
   ui.tft.TTFdestination(&ui.tft);
   ui.tft.setTTFFont(font);
-  if (clearH > 0) ui.tft.fillRect(TEXT_BOX_X, y - 2, TEXT_BOX_W, clearH, COL_BG);
-  ui.tft.setTextColor(color, COL_BG);
+  ui.tft.fillRect(boxX, boxY, boxW, boxH, COL_BG);
+  ui.tft.setTextColor(color);
   int w = ui.tft.TTFtextWidth(text);
-  ui.tft.setCursor((240 - w) / 2, y);
+  ui.tft.setCursor(CENTER_X - w / 2, textY);
   ui.tft.print(text);
 }
 
@@ -243,13 +261,15 @@ void drawPercentages(int session, int weekly) {
 
   if (session != drawnSessionText) {
     snprintf(buf, sizeof(buf), "%d%%", session);
-    drawCenteredNarrow(buf, Arial_32_Bold, sessionColor, 72, 42);
+    drawTextBox(buf, Arial_32_Bold, sessionColor, SESSION_BOX_X, SESSION_BOX_Y,
+                SESSION_BOX_W, SESSION_BOX_H, SESSION_TEXT_Y);
     drawnSessionText = session;
   }
 
   if (weekly != drawnWeeklyText) {
     snprintf(buf, sizeof(buf), "%d%%", weekly);
-    drawCenteredNarrow(buf, Arial_20_Bold, weeklyColor, 118, 28);
+    drawTextBox(buf, Arial_20_Bold, weeklyColor, WEEKLY_BOX_X, WEEKLY_BOX_Y,
+                WEEKLY_BOX_W, WEEKLY_BOX_H, WEEKLY_TEXT_Y);
     drawnWeeklyText = weekly;
   }
 }
@@ -519,6 +539,7 @@ void setup() {
 
   drawStatic();
   drawClocks(true);
+
 }
 
 void loop() {
